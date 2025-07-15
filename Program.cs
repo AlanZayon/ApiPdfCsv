@@ -25,11 +25,12 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 104857600;
 });
 
-var allowedOrigins = new[] 
+var allowedOrigins = new[]
 {
     "http://localhost:5173",
     "https://front-pdf-to-excel.vercel.app",
-    "https://admin.meusite.com"
+    "https://admin.meusite.com",
+    "https://pdftoexcel.netlify.app/",
 };
 
 builder.Services.AddCors(options =>
