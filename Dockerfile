@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Copia os arquivos de projeto e restaura dependências
 COPY *.sln .
-COPY ApiPdfCsv/*.csproj ./ApiPdfCsv/
+COPY ApiPdfCsv.csproj ./ApiPdfCsv/
 RUN dotnet restore
 
 # Copia tudo e faz build
