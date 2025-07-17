@@ -36,10 +36,12 @@ public class PdfProcessorService : IPdfProcessorService
             var waitingFinish = false;
 
             using var reader = new PdfReader(filePath);
+            
+            _logger.Info($"Processing PDF file: {filePath}");
 
             for (var page = 1; page <= reader.NumberOfPages; page++)
             {
-                
+
                 var strategy = new SimpleTextExtractionStrategy();
                 var text = PdfTextExtractor.GetTextFromPage(reader, page, strategy);
                 var lines = text.Split('\n')

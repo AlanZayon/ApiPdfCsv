@@ -1,17 +1,26 @@
 using System.IO;
+using Microsoft.Extensions.Options;
+using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
+using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Options;
 
 namespace ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
 
-public static class FileService
+public class FileService : IFileService
 {
-    private static readonly string OutputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
-    private static readonly string UploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+    private readonly string _outputDir;
+    private readonly string _uploadDir;
 
-    public static string GetSingleFile()
+    public FileService(IOptions<FileServiceOptions> options)
     {
-        EnsureDirectoryExists(OutputDir);
-        
-        var files = Directory.GetFiles(OutputDir);
+        _outputDir = options.Value.OutputDir;
+        _uploadDir = options.Value.UploadDir;
+    }
+
+    public string GetSingleFile()
+    {
+        EnsureDirectoryExists(_outputDir);
+
+        var files = Directory.GetFiles(_outputDir);
         if (files.Length == 0)
         {
             throw new FileNotFoundException("No files available for download");
@@ -20,13 +29,17 @@ public static class FileService
         return files[0];
     }
 
-    public static void ClearDirectories()
+    public void ClearDirectories()
     {
-        ClearDirectory(OutputDir);
-        ClearDirectory(UploadDir);
+        ClearDirectory(_outputDir);
+        ClearDirectory(_uploadDir);
     }
 
-    private static void EnsureDirectoryExists(string path)
+    public string GetOutputDir() => _outputDir;
+
+    public string GetUploadDir() => _uploadDir;
+
+    private void EnsureDirectoryExists(string path)
     {
         if (!Directory.Exists(path))
         {
@@ -34,27 +47,20 @@ public static class FileService
         }
     }
 
-    private static void ClearDirectory(string directoryPath)
+    private void ClearDirectory(string directoryPath)
     {
         if (!Directory.Exists(directoryPath)) return;
 
-        try
+        foreach (var file in Directory.GetFiles(directoryPath))
         {
-            foreach (var file in Directory.GetFiles(directoryPath))
+            try
             {
-                try
-                {
-                    System.IO.File.Delete(file);
-                }
-                catch
-                {
-                    // Ignore errors when deleting individual files
-                }
+                System.IO.File.Delete(file);
             }
-        }
-        catch
-        {
-            // Ignore errors when accessing directory
+            catch
+            {
+                // Ignore errors
+            }
         }
     }
 }

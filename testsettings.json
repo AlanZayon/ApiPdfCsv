@@ -1,0 +1,9 @@
+{
+  "TestFiles": {
+    "ValidPdf": "Resources/valid.pdf",
+    "InvalidPdf": "Resources/invalid.pdf"
+  },
+  "Logging": {
+    "MinimumLevel": "Warning"
+  }
+}

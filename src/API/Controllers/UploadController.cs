@@ -13,11 +13,17 @@ public class UploadController : ControllerBase
 {
     private readonly ILogger _logger;
     private readonly IPdfProcessorService _pdfProcessorService;
+    private readonly IFileService _fileService;
+    private readonly ProcessPdfUseCase _processPdfUseCase;
 
-    public UploadController(ILogger logger, IPdfProcessorService pdfProcessorService)
+
+    public UploadController(ILogger logger, IPdfProcessorService pdfProcessorService, IFileService fileService, ProcessPdfUseCase processPdfUseCase)
     {
         _logger = logger;
         _pdfProcessorService = pdfProcessorService;
+        _fileService = fileService;
+        _processPdfUseCase = processPdfUseCase;
+
     }
 
     [HttpPost("upload")]
@@ -30,7 +36,7 @@ public class UploadController : ControllerBase
         }
 
         var filePath = Path.GetTempFileName();
-        
+
         try
         {
             await using (var stream = System.IO.File.Create(filePath))
@@ -41,8 +47,8 @@ public class UploadController : ControllerBase
             _logger.Info($"Iniciando processamento do PDF: {filePath}");
 
             var command = new ProcessPdfCommand(filePath);
-            var useCase = new ProcessPdfUseCase(_pdfProcessorService, _logger);
-            var result = await useCase.Execute(command);
+            var result = await _processPdfUseCase.Execute(command);
+
 
             _logger.Info($"Processamento concluído com sucesso: {result}");
             return Ok(new { result });
@@ -50,7 +56,7 @@ public class UploadController : ControllerBase
         catch (Exception ex)
         {
             _logger.Error($"Erro ao processar PDF: {ex.Message}", ex);
-            FileService.ClearDirectories();
+            _fileService.ClearDirectories();
             return StatusCode(500, new { message = "Erro ao processar PDF", error = ex.Message });
         }
         finally

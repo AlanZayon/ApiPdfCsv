@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
+using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
 using ApiPdfCsv.Shared.Logging;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
 
@@ -10,10 +10,12 @@ namespace ApiPdfCsv.API.Controllers;
 public class DownloadController : ControllerBase
 {
     private readonly ILogger _logger;
+    private readonly IFileService _fileService;
 
-    public DownloadController(ILogger logger)
+    public DownloadController(ILogger logger, IFileService fileService)
     {
         _logger = logger;
+        _fileService = fileService;
     }
 
     [HttpGet("download")]
@@ -21,17 +23,17 @@ public class DownloadController : ControllerBase
     {
         try
         {
-            var filePath = FileService.GetSingleFile();
+            var filePath = _fileService.GetSingleFile();
             var fileStream = System.IO.File.OpenRead(filePath);
             var fileName = Path.GetFileName(filePath);
-            
+
             _logger.Info($"Download realizado com sucesso: {fileName}");
-            
+
             Response.OnCompleted(() =>
             {
                 try
                 {
-                    FileService.ClearDirectories();
+                    _fileService.ClearDirectories();
                     _logger.Info("Diretórios limpos com sucesso após download");
                 }
                 catch (Exception ex)

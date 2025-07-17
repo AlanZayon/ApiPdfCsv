@@ -11,11 +11,15 @@ public class ProcessPdfUseCase
 {
     private readonly IPdfProcessorService _pdfProcessor;
     private readonly ILogger _logger;
+    private readonly IFileService _fileService;
 
-    public ProcessPdfUseCase(IPdfProcessorService pdfProcessor, ILogger logger)
+
+    public ProcessPdfUseCase(IPdfProcessorService pdfProcessor, ILogger logger, IFileService fileService)
     {
         _pdfProcessor = pdfProcessor;
         _logger = logger;
+        _fileService = fileService;
+
     }
 
     public async Task<ProcessPdfResult> Execute(ProcessPdfCommand command)
@@ -24,7 +28,8 @@ public class ProcessPdfUseCase
 
         var result = await _pdfProcessor.Process(command.FilePath);
 
-        var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
+        var outputDir = _fileService.GetOutputDir();
+        
         if (!Directory.Exists(outputDir))
         {
             Directory.CreateDirectory(outputDir);

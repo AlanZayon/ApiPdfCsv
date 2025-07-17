@@ -4,6 +4,8 @@ using ApiPdfCsv.API.Controllers;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
+using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Options;
+using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
 using ApiPdfCsv.Shared.Logging;
 using Serilog;
 using Serilog.Extensions.Hosting;
@@ -50,6 +52,17 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddSingleton<ApiPdfCsv.Shared.Logging.ILogger, ApiPdfCsv.Shared.Logging.Logger>();
 builder.Services.AddScoped<IPdfProcessorService, PdfProcessorService>();
+builder.Services.Configure<FileServiceOptions>(config =>
+{
+    config.OutputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
+    config.UploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+});
+
+builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddScoped<ProcessPdfUseCase>();
+
+
+
 
 var app = builder.Build();
 
@@ -65,7 +78,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapGet("/teste", () => 
+app.MapGet("/", () => 
 {
     Log.Information("Você acessou /teste");
     return "ok";
@@ -83,6 +96,6 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/uploads"
 });
 
-
-
 app.Run();
+
+public partial class Program { }
