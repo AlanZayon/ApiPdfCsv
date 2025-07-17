@@ -72,7 +72,7 @@ Para executar os testes automatizados:
 cd ApiPdfCsv.Tests
 dotnet test
 ```
-Os testes exigem um PDF válido da Receita Federal com comprovantes de arrecadação (DAS ou DARF) dentro da pasta Resources
+Os testes exigem um PDF válido da Receita Federal com comprovantes de arrecadação (DAS ou DARF) dentro da pasta Resources que precisa ser criada dentro da pasta dos testes
 
 ### Tipos de Testes Implementados
 - Testes de Unidade: Cobertura das classes de serviço e utilitários  
