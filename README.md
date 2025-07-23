@@ -3,6 +3,8 @@
 ## 📌 Visão Geral
 Este sistema é uma API .NET para processar comprovantes de arrecadação da Receita Federal (DARF e DAS) em formato PDF, extraindo os dados financeiros e gerando relatórios estruturados em formato CSV/Excel.
 
+site para uso:https://pdftoexcel.netlify.app/
+
 ## ✨ Funcionalidades Principais
 - **Processamento de PDFs:** Extrai dados de comprovantes da Receita Federal  
 - **Geração de Relatórios:** Cria arquivos estruturados em CSV/Excel  
