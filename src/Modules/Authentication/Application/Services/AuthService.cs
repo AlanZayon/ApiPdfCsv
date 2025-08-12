@@ -152,9 +152,18 @@ public class AuthService : IAuthService
 
     public Task Logout()
     {
-        _httpContextAccessor.HttpContext?.Response.Cookies.Delete("auth_token");
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.None,
+            Expires = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _httpContextAccessor.HttpContext?.Response.Cookies.Delete("auth_token", cookieOptions);
         return Task.CompletedTask;
     }
+
 
     public async Task<UserInfoResponse> GetCurrentUser()
     {
