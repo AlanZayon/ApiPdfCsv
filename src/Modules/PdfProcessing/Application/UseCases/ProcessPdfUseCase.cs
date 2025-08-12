@@ -26,7 +26,7 @@ public class ProcessPdfUseCase
     {
         _logger.Info($"Iniciando processamento do PDF: {command.FilePath}");
 
-        var result = await _pdfProcessor.Process(command.FilePath);
+        var result = await _pdfProcessor.Process(command.FilePath, command.UserId);
 
         var outputDir = _fileService.GetOutputDir();
         
@@ -45,7 +45,7 @@ public class ProcessPdfUseCase
                 {
                     DataDeArrecadacao = comp.DataArrecadacao,
                     Debito = comp.Debito[x.index],
-                    Credito = comp.Credito,
+                    Credito = comp.Credito[x.index],
                     Total = (comp.Total[x.index] as decimal?) ?? 0m,
                     Descricao = x.descricao,
                     Divisao = 1

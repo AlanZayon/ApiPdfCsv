@@ -5,5 +5,5 @@ namespace ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
 
 public interface IPdfProcessorService
 {
-    Task<ProcessedPdfData> Process(string filePath);
+    Task<ProcessedPdfData> Process(string filePath, string userId);
 }

@@ -41,7 +41,7 @@ public static class ExcelGenerator
             // Segunda linha (crédito)
             worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
             worksheet.Cell(rowIndex, 2).Value = "";
-            worksheet.Cell(rowIndex, 3).Value = 5;
+            worksheet.Cell(rowIndex, 3).Value = item.Credito;
             worksheet.Cell(rowIndex, 4).Value = item.Total;
             worksheet.Cell(rowIndex, 5).Value = item.Descricao;
             worksheet.Cell(rowIndex, 6).Value = "";

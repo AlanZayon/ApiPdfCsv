@@ -1,12 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
+using System.Security.Claims;
 using ApiPdfCsv.Shared.Logging;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
 
 namespace ApiPdfCsv.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class UploadController : ControllerBase
@@ -36,6 +39,7 @@ public class UploadController : ControllerBase
         }
 
         var filePath = Path.GetTempFileName();
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
         try
         {
@@ -46,7 +50,7 @@ public class UploadController : ControllerBase
 
             _logger.Info($"Iniciando processamento do PDF: {filePath}");
 
-            var command = new ProcessPdfCommand(filePath);
+            var command = new ProcessPdfCommand(filePath, userId ?? string.Empty);
             var result = await _processPdfUseCase.Execute(command);
 
 

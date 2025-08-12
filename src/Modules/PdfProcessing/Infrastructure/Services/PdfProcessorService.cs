@@ -3,7 +3,9 @@ using iTextSharp.text.pdf.parser;
 using System.Text.Json;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
+using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
 using ApiPdfCsv.Shared.Utils;
+using System.Security.Claims;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -17,26 +19,31 @@ namespace ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
 public class PdfProcessorService : IPdfProcessorService
 {
     private readonly ILogger _logger;
+    private readonly IImpostoService _impostoService;
     private ComprovanteData _current = InitializeCurrent();
     private readonly List<string> _descricoes = new();
     private readonly List<decimal> _debitos = new();
+    private readonly List<decimal> _creditos = new();
+
     private readonly List<decimal> _totais = new();
 
-    public PdfProcessorService(ILogger logger)
+    public PdfProcessorService(ILogger logger, IImpostoService impostoService)
     {
+        _impostoService = impostoService;
+
         _logger = logger;
     }
 
-    public async Task<ProcessedPdfData> Process(string filePath)
+    public async Task<ProcessedPdfData> Process(string filePath, string userId)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             var comprovantes = new List<ComprovanteData>();
             var collectingDescricoes = false;
             var waitingFinish = false;
 
             using var reader = new PdfReader(filePath);
-            
+
             _logger.Info($"Processing PDF file: {filePath}");
 
             for (var page = 1; page <= reader.NumberOfPages; page++)
@@ -75,7 +82,7 @@ public class PdfProcessorService : IPdfProcessorService
                         if (line.StartsWith("Totais"))
                         {
                             collectingDescricoes = false;
-                            ProcessarTotais();
+                            ProcessarTotais(userId).Wait();
                         }
                         else if (Regex.IsMatch(line, @"^\d{4}(?=.*[A-Za-z]).*\d{1,3},\d{2}$"))
                         {
@@ -85,7 +92,7 @@ public class PdfProcessorService : IPdfProcessorService
 
                     if (line == "Totais")
                     {
-                        ProcessarLinhaTotais(lines[i + 1]);
+                        await ProcessarLinhaTotais(lines[i + 1], userId);
                         waitingFinish = true;
                     }
                 }
@@ -102,7 +109,7 @@ public class PdfProcessorService : IPdfProcessorService
         {
             DataArrecadacao = string.Empty,
             Debito = new List<decimal>(),
-            Credito = 0,
+            Credito = new List<decimal>(),
             Total = new List<decimal>(),
             Descricoes = new List<string>()
         };
@@ -128,14 +135,16 @@ public class PdfProcessorService : IPdfProcessorService
         _descricoes.Add(historico);
     }
 
-    private void ProcessarTotais()
+    private async Task ProcessarTotais(string userId)
     {
         var (descricoes, totais) = PdfUtils.AgruparDescricoesEValores(
             new List<string>(_descricoes),
             new List<decimal>(_totais)
         );
 
-        _debitos.AddRange(PdfUtils.MapearDebito(descricoes));
+        _debitos.AddRange(await _impostoService.MapearDebito(descricoes, userId));
+        _creditos.AddRange(await _impostoService.MapearCredito(descricoes, userId));
+
 
         _current = new ComprovanteData
         {
@@ -143,13 +152,13 @@ public class PdfProcessorService : IPdfProcessorService
             Descricoes = descricoes,
             Total = totais,
             Debito = new List<decimal>(_debitos),
-            Credito = CalcularCredito()
+            Credito = new List<decimal>(_creditos)
         };
 
         LimparArraysTemporarios();
     }
 
-    private void ProcessarLinhaTotais(string totalLine)
+    private async Task ProcessarLinhaTotais(string totalLine, string userId)
     {
         if (string.IsNullOrWhiteSpace(totalLine)) return;
 
@@ -157,16 +166,17 @@ public class PdfProcessorService : IPdfProcessorService
         var priceMatches = Regex.Matches(totalLineTrim, @"\d{1,3}(?:\.\d{3})*,\d{2}");
         if (priceMatches.Count == 0) return;
 
-        ProcessarMultaEJuros(totalLineTrim);
+        await ProcessarMultaEJuros(totalLineTrim, userId);
     }
 
-    private void ProcessarMultaEJuros(string totalLineTrim)
+    private async Task ProcessarMultaEJuros(string totalLineTrim, string userId)
     {
         var parsedValues = PdfUtils.ParseTotaisLinha(totalLineTrim);
         if (parsedValues?.SomaMultaJuros == null) return;
 
         _current.Descricoes.Add("PG. MULTA E JUROS XX");
-        _current.Debito.AddRange(PdfUtils.MapearDebito(new List<string> { "PG. MULTA E JUROS XX" }));
+        _current.Debito.AddRange(await _impostoService.MapearDebito(new List<string> { "PG. MULTA E JUROS XX" }, userId));
+        _current.Credito.AddRange(await _impostoService.MapearCredito(new List<string> { "PG. MULTA E JUROS XX" }, userId));
         _current.Total.Add(parsedValues.SomaMultaJuros);
     }
 
@@ -188,6 +198,7 @@ public class PdfProcessorService : IPdfProcessorService
     {
         _descricoes.Clear();
         _debitos.Clear();
+        _creditos.Clear();
         _totais.Clear();
     }
 

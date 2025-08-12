@@ -69,3 +69,5 @@ TestResults/
 
 # Web publish
 .publish/
+
+.env

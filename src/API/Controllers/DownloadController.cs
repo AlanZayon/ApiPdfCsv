@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
 using ApiPdfCsv.Shared.Logging;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
 
 namespace ApiPdfCsv.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class DownloadController : ControllerBase

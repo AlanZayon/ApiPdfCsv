@@ -6,6 +6,7 @@ using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
 using ApiPdfCsv.Shared.Logging;
 using System.IO;
 using System.Threading.Tasks;
+using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
 
 public class PdfProcessingFunctionalTests
 {
@@ -20,7 +21,14 @@ public class PdfProcessingFunctionalTests
         try
         {
             var logger = new Logger();
-            var pdfProcessor = new PdfProcessorService(logger);
+            
+            var mockImpostoService = new Mock<IImpostoService>();
+            mockImpostoService.Setup(x => x.MapearDebito(It.IsAny<List<string>>(), It.IsAny<string>()))
+                .ReturnsAsync(new List<decimal> { 0m });
+            mockImpostoService.Setup(x => x.MapearCredito(It.IsAny<List<string>>(), It.IsAny<string>()))
+                .ReturnsAsync(new List<decimal> { 0m });
+
+            var pdfProcessor = new PdfProcessorService(logger, mockImpostoService.Object);
 
             var mockFileService = new Mock<IFileService>();
             mockFileService.Setup(f => f.GetOutputDir()).Returns(outputDir);
@@ -30,12 +38,14 @@ public class PdfProcessingFunctionalTests
 
             var useCase = new ProcessPdfUseCase(pdfProcessor, logger, mockFileService.Object);
             var testPdfPath = Path.Combine(Directory.GetCurrentDirectory(), "Resources", "test.pdf");
+            const string userId = "test-user";
 
             Assert.True(File.Exists(testPdfPath), $"Arquivo de teste '{testPdfPath}' não foi encontrado.");
 
-            var result = await useCase.Execute(new ProcessPdfCommand(testPdfPath));
+            var result = await useCase.Execute(new ProcessPdfCommand(testPdfPath, userId));
 
             Assert.NotNull(result);
+            Assert.Equal(csvPath, result.OutputPath);
             Assert.True(File.Exists(csvPath), $"Arquivo esperado '{csvPath}' não foi gerado.");
         }
         finally
@@ -47,6 +57,4 @@ public class PdfProcessingFunctionalTests
             }
         }
     }
-
 }
-
