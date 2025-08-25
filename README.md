@@ -123,13 +123,6 @@ Código   Descrição                          Principal   Multa   Juros   Total
 TOTAIS                                      XXXXX,XX    X,XX    X,XX    XXXXX,XX
 ```
 
-## 🤝 Contribuição
-1. Faça um fork do projeto  
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)  
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)  
-4. Push para a branch (`git push origin feature/AmazingFeature`)  
-5. Abra um Pull Request  
-
 ## 📄 Licença
 Distribuído sob a licença MIT. Veja `LICENSE` para mais informações.
 

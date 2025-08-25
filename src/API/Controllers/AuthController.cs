@@ -82,7 +82,20 @@ public class AuthController : ControllerBase
         return Ok(new { Message = "Logged out successfully" });
     }
 
-    // Modules/Authentication/Application/Controllers/AuthController.cs (adicione este método)
+    [HttpPut("change-username")]
+    [Authorize]
+    public async Task<IActionResult> ChangeUserName([FromBody] ChangeUserNameRequest request)
+    {
+        var result = await _authService.ChangeUserName(request);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
     [HttpPost("change-password")]
     [Authorize]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)

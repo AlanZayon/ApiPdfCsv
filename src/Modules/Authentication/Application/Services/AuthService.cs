@@ -280,6 +280,63 @@ public class AuthService : IAuthService
             Roles = roles.ToList()
         };
     }
+    public async Task<Result<bool>> ChangeUserName(ChangeUserNameRequest request)
+{
+    try
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal == null)
+        {
+            return Result<bool>.Failure("Usuário não autenticado", new List<ValidationError>
+            {
+                new ValidationError("NotAuthenticated", "Usuário não está autenticado")
+            });
+        }
+
+        var user = await _userManager.GetUserAsync(principal);
+        if (user == null)
+        {
+            return Result<bool>.Failure("Usuário não encontrado", new List<ValidationError>
+            {
+                new ValidationError("UserNotFound", "Usuário não encontrado")
+            });
+        }
+
+        // Validar se o novo nome não está vazio
+        if (string.IsNullOrWhiteSpace(request.NewFullName))
+        {
+            return Result<bool>.Failure("Nome inválido", new List<ValidationError>
+            {
+                new ValidationError("InvalidName", "O nome não pode estar vazio")
+            });
+        }
+
+        // Verificar se o nome realmente mudou
+        if (user.FullName == request.NewFullName)
+        {
+            return Result<bool>.Failure("O novo nome deve ser diferente do atual", new List<ValidationError>
+            {
+                new ValidationError("SameName", "O novo nome não pode ser igual ao nome atual")
+            });
+        }
+
+        // Atualizar o nome do usuário
+        user.FullName = request.NewFullName;
+        var updateResult = await _userManager.UpdateAsync(user);
+
+        if (!updateResult.Succeeded)
+        {
+            var errors = updateResult.Errors.Select(e => new ValidationError(e.Code, e.Description)).ToList();
+            return Result<bool>.Failure("Falha ao alterar o nome", errors);
+        }
+
+        return Result<bool>.SuccessResult(true);
+    }
+    catch (Exception ex)
+    {
+        return Result<bool>.Error("Erro inesperado ao tentar alterar o nome", ex);
+    }
+}
 
     public async Task<Result<bool>> ChangePassword(ChangePasswordRequest request)
     {

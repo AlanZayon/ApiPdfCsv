@@ -11,5 +11,6 @@ public interface IAuthService
     Task Logout();
     Task<UserInfoResponse> GetCurrentUser();
     Task<Result<bool>> DeleteUser(string userId);
+    Task<Result<bool>> ChangeUserName(ChangeUserNameRequest request);
     Task<Result<bool>> ChangePassword(ChangePasswordRequest request);
 }
