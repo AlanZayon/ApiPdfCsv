@@ -9,6 +9,8 @@ using ApiPdfCsv.Shared.Results;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.WebUtilities;
+using System.Text;
 using System.Security.Claims;
 
 
@@ -22,15 +24,18 @@ public class AuthService : IAuthService
 
     private readonly TokenService _tokenService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IEmailService _emailService;
+    private readonly IConfiguration _configuration;
 
 
-    public AuthService(UserManager<ApplicationUser> userManager, TokenService tokenService, IHttpContextAccessor httpContextAccessor, AppDbContext context)
+    public AuthService(UserManager<ApplicationUser> userManager, TokenService tokenService, IHttpContextAccessor httpContextAccessor, AppDbContext context, IEmailService emailService, IConfiguration configuration)
     {
         _userManager = userManager;
         _tokenService = tokenService;
         _httpContextAccessor = httpContextAccessor;
         _dbContext = context;
-
+        _emailService = emailService;
+        _configuration = configuration;
     }
 
     public async Task<Result<RegisterResponse>> Register(RegisterRequest request)
@@ -281,62 +286,62 @@ public class AuthService : IAuthService
         };
     }
     public async Task<Result<bool>> ChangeUserName(ChangeUserNameRequest request)
-{
-    try
     {
-        var principal = _httpContextAccessor.HttpContext?.User;
-        if (principal == null)
+        try
         {
-            return Result<bool>.Failure("Usuário não autenticado", new List<ValidationError>
+            var principal = _httpContextAccessor.HttpContext?.User;
+            if (principal == null)
+            {
+                return Result<bool>.Failure("Usuário não autenticado", new List<ValidationError>
             {
                 new ValidationError("NotAuthenticated", "Usuário não está autenticado")
             });
-        }
+            }
 
-        var user = await _userManager.GetUserAsync(principal);
-        if (user == null)
-        {
-            return Result<bool>.Failure("Usuário não encontrado", new List<ValidationError>
+            var user = await _userManager.GetUserAsync(principal);
+            if (user == null)
+            {
+                return Result<bool>.Failure("Usuário não encontrado", new List<ValidationError>
             {
                 new ValidationError("UserNotFound", "Usuário não encontrado")
             });
-        }
+            }
 
-        // Validar se o novo nome não está vazio
-        if (string.IsNullOrWhiteSpace(request.NewFullName))
-        {
-            return Result<bool>.Failure("Nome inválido", new List<ValidationError>
+            // Validar se o novo nome não está vazio
+            if (string.IsNullOrWhiteSpace(request.NewFullName))
+            {
+                return Result<bool>.Failure("Nome inválido", new List<ValidationError>
             {
                 new ValidationError("InvalidName", "O nome não pode estar vazio")
             });
-        }
+            }
 
-        // Verificar se o nome realmente mudou
-        if (user.FullName == request.NewFullName)
-        {
-            return Result<bool>.Failure("O novo nome deve ser diferente do atual", new List<ValidationError>
+            // Verificar se o nome realmente mudou
+            if (user.FullName == request.NewFullName)
+            {
+                return Result<bool>.Failure("O novo nome deve ser diferente do atual", new List<ValidationError>
             {
                 new ValidationError("SameName", "O novo nome não pode ser igual ao nome atual")
             });
+            }
+
+            // Atualizar o nome do usuário
+            user.FullName = request.NewFullName;
+            var updateResult = await _userManager.UpdateAsync(user);
+
+            if (!updateResult.Succeeded)
+            {
+                var errors = updateResult.Errors.Select(e => new ValidationError(e.Code, e.Description)).ToList();
+                return Result<bool>.Failure("Falha ao alterar o nome", errors);
+            }
+
+            return Result<bool>.SuccessResult(true);
         }
-
-        // Atualizar o nome do usuário
-        user.FullName = request.NewFullName;
-        var updateResult = await _userManager.UpdateAsync(user);
-
-        if (!updateResult.Succeeded)
+        catch (Exception ex)
         {
-            var errors = updateResult.Errors.Select(e => new ValidationError(e.Code, e.Description)).ToList();
-            return Result<bool>.Failure("Falha ao alterar o nome", errors);
+            return Result<bool>.Error("Erro inesperado ao tentar alterar o nome", ex);
         }
-
-        return Result<bool>.SuccessResult(true);
     }
-    catch (Exception ex)
-    {
-        return Result<bool>.Error("Erro inesperado ao tentar alterar o nome", ex);
-    }
-}
 
     public async Task<Result<bool>> ChangePassword(ChangePasswordRequest request)
     {
@@ -423,6 +428,107 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             return Result<bool>.Error("Erro inesperado ao tentar alterar a senha", ex);
+        }
+    }
+
+    public async Task<Result<bool>> ForgotPassword(ForgotPasswordRequest request)
+    {
+        try
+        {
+            var user = await _userManager.FindByEmailAsync(request.Email);
+
+            if (user == null)
+            {
+                return Result<bool>.SuccessResult(true);
+            }
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+            var baseUrl = _configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
+            var resetUrl = $"{baseUrl}/reset-password?email={user.Email}&token={encodedToken}";
+            if (string.IsNullOrEmpty(user.Email) || string.IsNullOrEmpty(user.FullName))
+            {
+                return Result<bool>.Failure("Dados do usuário incompletos para envio de email", new List<ValidationError>
+                {
+                    new ValidationError("MissingUserData", "Email ou nome do usuário está ausente")
+                });
+            }
+
+            await _emailService.SendPasswordResetEmailAsync(user.Email, user.FullName, resetUrl);
+
+            return Result<bool>.SuccessResult(true);
+        }
+        catch (Exception ex)
+        {
+            return Result<bool>.Error("Erro inesperado ao processar solicitação de redefinição de senha", ex);
+        }
+    }
+
+    public async Task<Result<bool>> ResetPassword(ResetPasswordRequest request)
+    {
+        try
+        {
+            if (request.NewPassword != request.ConfirmPassword)
+            {
+                return Result<bool>.Failure("As senhas não coincidem", new List<ValidationError>
+                {
+                    new ValidationError("PasswordMismatch", "A nova senha e a confirmação não coincidem")
+                });
+            }
+
+            var user = await _userManager.FindByEmailAsync(request.Email);
+            if (user == null)
+            {
+                return Result<bool>.Failure("Operação de redefinição de senha falhou", new List<ValidationError>
+                {
+                    new ValidationError("InvalidRequest", "Solicitação inválida ou expirada")
+                });
+            }
+
+            string decodedToken;
+            try
+            {
+                var tokenBytes = WebEncoders.Base64UrlDecode(request.Token);
+                decodedToken = Encoding.UTF8.GetString(tokenBytes);
+            }
+            catch
+            {
+                decodedToken = request.Token;
+            }
+
+            var passwordValidator = new PasswordValidator<ApplicationUser>();
+            var validationResult = await passwordValidator.ValidateAsync(_userManager, user, request.NewPassword);
+
+            if (!validationResult.Succeeded)
+            {
+                var errors = validationResult.Errors.Select(e => new ValidationError(e.Code, e.Description)).ToList();
+                return Result<bool>.Failure("A nova senha não atende aos requisitos de segurança", errors);
+            }
+
+            var result = await _userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
+
+            if (!result.Succeeded)
+            {
+                var errors = result.Errors.Select(e => new ValidationError(e.Code, e.Description)).ToList();
+
+                if (errors.Any(e => e.Code.Contains("InvalidToken")))
+                {
+                    return Result<bool>.Failure("Token inválido ou expirado", new List<ValidationError>
+                    {
+                        new ValidationError("InvalidToken", "O link de redefinição é inválido ou expirou")
+                    });
+                }
+
+                return Result<bool>.Failure("Falha ao redefinir a senha", errors);
+            }
+
+            return Result<bool>.SuccessResult(true);
+        }
+        catch (Exception ex)
+        {
+            return Result<bool>.Error("Erro inesperado ao redefinir senha", ex);
         }
     }
 

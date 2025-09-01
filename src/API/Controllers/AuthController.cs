@@ -130,6 +130,82 @@ public class AuthController : ControllerBase
 
         return Ok(result);
     }
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var result = await _authService.ForgotPassword(request);
+
+        if (result.Success)
+        {
+            return Ok(new
+            {
+                Success = true,
+                Message = "Se o email estiver cadastrado, você receberá instruções para redefinir sua senha"
+            });
+        }
+
+        if (result.Errors?.Any() == true)
+        {
+            return BadRequest(new
+            {
+                result.Success,
+                result.Message,
+                Errors = result.Errors.GroupBy(e => e.Code)
+                    .ToDictionary(g => g.Key, g => g.Select(e => e.Description).ToArray())
+            });
+        }
+
+        return StatusCode(StatusCodes.Status500InternalServerError, new
+        {
+            result.Success,
+            result.Message,
+            result.Exception
+        });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var result = await _authService.ResetPassword(request);
+
+        if (result.Success)
+        {
+            return Ok(new
+            {
+                Success = true,
+                Message = "Senha redefinida com sucesso"
+            });
+        }
+
+        if (result.Errors?.Any() == true)
+        {
+            if (result.Errors.Any(e => e.Code == "InvalidToken"))
+            {
+                return BadRequest(new
+                {
+                    result.Success,
+                    Message = "Link de redefinição inválido ou expirado",
+                    Errors = result.Errors.GroupBy(e => e.Code)
+                        .ToDictionary(g => g.Key, g => g.Select(e => e.Description).ToArray())
+                });
+            }
+
+            return BadRequest(new
+            {
+                result.Success,
+                result.Message,
+                Errors = result.Errors.GroupBy(e => e.Code)
+                    .ToDictionary(g => g.Key, g => g.Select(e => e.Description).ToArray())
+            });
+        }
+
+        return StatusCode(StatusCodes.Status500InternalServerError, new
+        {
+            result.Success,
+            result.Message,
+            result.Exception
+        });
+    }
 
     [HttpGet("me")]
     [Authorize]

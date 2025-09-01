@@ -12,10 +12,10 @@ using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Options;
 using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
 using ApiPdfCsv.Shared.Logging;
-using ApiPdfCsv.Modules.Authentication.Application.Services;
 using ApiPdfCsv.CrossCutting.Data;
 using ApiPdfCsv.CrossCutting.Identity.Configurations;
 using ApiPdfCsv.Modules.Authentication.Infrastructure.Services;
+using ApiPdfCsv.Modules.Authentication.Application.Services;
 using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
 using ApiPdfCsv.Modules.CodeManagement.Application.Services;
 using ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces;
@@ -88,6 +88,7 @@ builder.Services.Configure<FileServiceOptions>(config =>
     config.OutputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
     config.UploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 });
+builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<ProcessPdfUseCase>();
 

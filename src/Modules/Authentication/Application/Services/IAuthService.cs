@@ -13,4 +13,6 @@ public interface IAuthService
     Task<Result<bool>> DeleteUser(string userId);
     Task<Result<bool>> ChangeUserName(ChangeUserNameRequest request);
     Task<Result<bool>> ChangePassword(ChangePasswordRequest request);
+    Task<Result<bool>> ForgotPassword(ForgotPasswordRequest request);
+    Task<Result<bool>> ResetPassword(ResetPasswordRequest request);
 }
