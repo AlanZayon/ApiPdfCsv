@@ -26,10 +26,9 @@ public class DownloadController : ControllerBase
         try
         {
             var filePath = _fileService.GetSingleFile();
-            var fileStream = System.IO.File.OpenRead(filePath);
             var fileName = Path.GetFileName(filePath);
 
-            _logger.Info($"Download realizado com sucesso: {fileName}");
+            _logger.Info($"Download iniciado: {fileName}");
 
             Response.OnCompleted(() =>
             {
@@ -45,7 +44,8 @@ public class DownloadController : ControllerBase
                 return Task.CompletedTask;
             });
 
-            return File(fileStream, "application/octet-stream", fileName);
+            // Usando PhysicalFile que gerencia o stream automaticamente
+            return PhysicalFile(filePath, "application/octet-stream", fileName);
         }
         catch (FileNotFoundException ex)
         {
@@ -55,7 +55,7 @@ public class DownloadController : ControllerBase
         catch (Exception ex)
         {
             _logger.Error($"Erro ao realizar download: {ex.Message}", ex);
-            return StatusCode(500, new { message = "Erro ao realizar download", error = ex.Message });
+            return StatusCode(500, new { message = "Erro interno durante o download. Tente novamente ou entre em contato com o suporte." });
         }
     }
 }

@@ -152,7 +152,7 @@ public class AuthService : IAuthService
             }
 
             var roles = await _userManager.GetRolesAsync(user);
-            var token = _tokenService.GenerateToken(user);
+            var token = await _tokenService.GenerateToken(user);
 
             var cookieOptions = new CookieOptions
             {
@@ -262,18 +262,18 @@ public class AuthService : IAuthService
 
     public async Task<UserInfoResponse> GetCurrentUser()
     {
-
         var principal = _httpContextAccessor.HttpContext?.User;
 
         if (principal == null)
         {
-            throw new ApplicationException("User not authenticated");
+            return null; // Retorna null ao invés de exception para controle de fluxo
         }
+        
         var user = await _userManager.GetUserAsync(principal);
 
         if (user == null)
         {
-            throw new ApplicationException("User not authenticated");
+            return null; // Retorna null ao invés de exception para controle de fluxo
         }
 
         var roles = await _userManager.GetRolesAsync(user);
