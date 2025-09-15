@@ -20,29 +20,45 @@ public class PdfProcessorService : IPdfProcessorService
 {
     private readonly ILogger _logger;
     private readonly IImpostoService _impostoService;
-    private ComprovanteData _current = InitializeCurrent();
-    private readonly List<string> _descricoes = new();
-    private readonly List<decimal> _debitos = new();
-    private readonly List<decimal> _creditos = new();
 
-    private readonly List<decimal> _totais = new();
+    // Classe para encapsular o estado do processamento de forma thread-safe
+    private class ProcessingState
+    {
+        public ComprovanteData Current { get; set; } = InitializeCurrent();
+        public List<string> Descricoes { get; } = new();
+        public List<decimal> Debitos { get; } = new();
+        public List<decimal> Creditos { get; } = new();
+        public List<decimal> Totais { get; } = new();
+
+        public void Reset()
+        {
+            Current = InitializeCurrent();
+            ClearArrays();
+        }
+
+        public void ClearArrays()
+        {
+            Descricoes.Clear();
+            Debitos.Clear();
+            Creditos.Clear();
+            Totais.Clear();
+        }
+    }
 
     public PdfProcessorService(ILogger logger, IImpostoService impostoService)
     {
         _impostoService = impostoService;
-
         _logger = logger;
     }
 
     public async Task<ProcessedPdfData> Process(string filePath, string userId)
     {
-        return await Task.Run(async () =>
-        {
-            var comprovantes = new List<ComprovanteData>();
-            var collectingDescricoes = false;
-            var waitingFinish = false;
+        var state = new ProcessingState();
+        var comprovantes = new List<ComprovanteData>();
+        var collectingDescricoes = false;
+        var waitingFinish = false;
 
-            using var reader = new PdfReader(filePath);
+        using var reader = new PdfReader(filePath);
 
             _logger.Info($"Processing PDF file: {filePath}");
 
@@ -62,10 +78,10 @@ public class PdfProcessorService : IPdfProcessorService
 
                     if (line.Contains("Agência Estabelecimento Valor Reservado/Restituído Referência"))
                     {
-                        ExtractDataArrecadacao(lines[i + 1]);
+                        ExtractDataArrecadacao(state, lines[i + 1]);
                         if (waitingFinish)
                         {
-                            FinalizarComprovante(comprovantes);
+                            FinalizarComprovante(state, comprovantes);
                             waitingFinish = false;
                         }
                         continue;
@@ -82,25 +98,24 @@ public class PdfProcessorService : IPdfProcessorService
                         if (line.StartsWith("Totais"))
                         {
                             collectingDescricoes = false;
-                            ProcessarTotais(userId).Wait();
+                            await ProcessarTotais(state, userId);
                         }
                         else if (Regex.IsMatch(line, @"^\d{4}(?=.*[A-Za-z]).*\d{1,3},\d{2}$"))
                         {
-                            ProcessarLinhaPagamento(line);
+                            ProcessarLinhaPagamento(state, line);
                         }
                     }
 
                     if (line == "Totais")
                     {
-                        await ProcessarLinhaTotais(lines[i + 1], userId);
+                        await ProcessarLinhaTotais(state, lines[i + 1], userId);
                         waitingFinish = true;
                     }
                 }
             }
 
-            FinalizarComprovante(comprovantes);
-            return new ProcessedPdfData(comprovantes);
-        });
+        FinalizarComprovante(state, comprovantes);
+        return new ProcessedPdfData(comprovantes);
     }
 
     private static ComprovanteData InitializeCurrent()
@@ -115,50 +130,49 @@ public class PdfProcessorService : IPdfProcessorService
         };
     }
 
-    private void ExtractDataArrecadacao(string line)
+    private void ExtractDataArrecadacao(ProcessingState state, string line)
     {
         var dateRegex = new Regex(@"\d{2}/\d{2}/\d{4}");
         var match = dateRegex.Match(line);
         if (match.Success)
         {
-            _current.DataArrecadacao = match.Value;
+            state.Current.DataArrecadacao = match.Value;
         }
     }
 
-    private void ProcessarLinhaPagamento(string line)
+    private void ProcessarLinhaPagamento(ProcessingState state, string line)
     {
         var valoresHistorico = PdfUtils.ParseLinhaHistorico(line);
         if (valoresHistorico == null) return;
 
-        _totais.Add(valoresHistorico.Principal);
+        state.Totais.Add(valoresHistorico.Principal);
         var historico = PdfUtils.ExtrairHistorico(line);
-        _descricoes.Add(historico);
+        state.Descricoes.Add(historico);
     }
 
-    private async Task ProcessarTotais(string userId)
+    private async Task ProcessarTotais(ProcessingState state, string userId)
     {
         var (descricoes, totais) = PdfUtils.AgruparDescricoesEValores(
-            new List<string>(_descricoes),
-            new List<decimal>(_totais)
+            new List<string>(state.Descricoes),
+            new List<decimal>(state.Totais)
         );
 
-        _debitos.AddRange(await _impostoService.MapearDebito(descricoes, userId));
-        _creditos.AddRange(await _impostoService.MapearCredito(descricoes, userId));
+        state.Debitos.AddRange(await _impostoService.MapearDebito(descricoes, userId));
+        state.Creditos.AddRange(await _impostoService.MapearCredito(descricoes, userId));
 
-
-        _current = new ComprovanteData
+        state.Current = new ComprovanteData
         {
-            DataArrecadacao = _current.DataArrecadacao,
+            DataArrecadacao = state.Current.DataArrecadacao,
             Descricoes = descricoes,
             Total = totais,
-            Debito = new List<decimal>(_debitos),
-            Credito = new List<decimal>(_creditos)
+            Debito = new List<decimal>(state.Debitos),
+            Credito = new List<decimal>(state.Creditos)
         };
 
-        LimparArraysTemporarios();
+        state.ClearArrays();
     }
 
-    private async Task ProcessarLinhaTotais(string totalLine, string userId)
+    private async Task ProcessarLinhaTotais(ProcessingState state, string totalLine, string userId)
     {
         if (string.IsNullOrWhiteSpace(totalLine)) return;
 
@@ -166,41 +180,26 @@ public class PdfProcessorService : IPdfProcessorService
         var priceMatches = Regex.Matches(totalLineTrim, @"\d{1,3}(?:\.\d{3})*,\d{2}");
         if (priceMatches.Count == 0) return;
 
-        await ProcessarMultaEJuros(totalLineTrim, userId);
+        await ProcessarMultaEJuros(state, totalLineTrim, userId);
     }
 
-    private async Task ProcessarMultaEJuros(string totalLineTrim, string userId)
+    private async Task ProcessarMultaEJuros(ProcessingState state, string totalLineTrim, string userId)
     {
         var parsedValues = PdfUtils.ParseTotaisLinha(totalLineTrim);
         if (parsedValues?.SomaMultaJuros == null) return;
 
-        _current.Descricoes.Add("PG. MULTA E JUROS XX");
-        _current.Debito.AddRange(await _impostoService.MapearDebito(new List<string> { "PG. MULTA E JUROS XX" }, userId));
-        _current.Credito.AddRange(await _impostoService.MapearCredito(new List<string> { "PG. MULTA E JUROS XX" }, userId));
-        _current.Total.Add(parsedValues.SomaMultaJuros);
+        state.Current.Descricoes.Add("PG. MULTA E JUROS XX");
+        state.Current.Debito.AddRange(await _impostoService.MapearDebito(new List<string> { "PG. MULTA E JUROS XX" }, userId));
+        state.Current.Credito.AddRange(await _impostoService.MapearCredito(new List<string> { "PG. MULTA E JUROS XX" }, userId));
+        state.Current.Total.Add(parsedValues.SomaMultaJuros);
     }
 
-    private void FinalizarComprovante(List<ComprovanteData> comprovantes)
+    private void FinalizarComprovante(ProcessingState state, List<ComprovanteData> comprovantes)
     {
-        if (string.IsNullOrEmpty(_current.DataArrecadacao)) return;
+        if (string.IsNullOrEmpty(state.Current.DataArrecadacao)) return;
 
-        comprovantes.Add(new ComprovanteData(_current));
-        ResetarEstado();
+        comprovantes.Add(new ComprovanteData(state.Current));
+        state.Reset();
     }
 
-    private void ResetarEstado()
-    {
-        _current = InitializeCurrent();
-        LimparArraysTemporarios();
-    }
-
-    private void LimparArraysTemporarios()
-    {
-        _descricoes.Clear();
-        _debitos.Clear();
-        _creditos.Clear();
-        _totais.Clear();
-    }
-
-    private decimal CalcularCredito() => 5m;
 }

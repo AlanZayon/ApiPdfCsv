@@ -100,7 +100,11 @@ builder.Services.AddScoped<IImpostoService, ImpostoService>();
 // 🔹 Pega conexão do .env ou do appsettings
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 
-Console.WriteLine($"Connection String: {connStr}");
+// Log apenas se connection string está configurada (sem expor valores)
+if (builder.Environment.IsDevelopment())
+{
+    Console.WriteLine($"Connection String configured: {!string.IsNullOrEmpty(connStr)}");
+}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connStr, npgsqlOptions => npgsqlOptions.EnableRetryOnFailure()));
@@ -111,19 +115,25 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 var app = builder.Build();
 
-// Migrações automáticas
-using (var scope = app.Services.CreateScope())
+// Migrações automáticas apenas em desenvolvimento
+// Em produção, execute migrações manualmente ou via pipeline de deploy
+if (app.Environment.IsDevelopment())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.Migrate();
+    }
 }
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    app.UseHttpsRedirection();
 }
+
+// HTTPS redirection deve ser sempre aplicado
+app.UseHttpsRedirection();
 
 app.UseCors("AllowedOrigins");
 app.UseAuthentication();

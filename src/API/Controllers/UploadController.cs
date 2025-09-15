@@ -38,6 +38,31 @@ public class UploadController : ControllerBase
             return BadRequest(new { message = "Arquivo não enviado." });
         }
 
+        // Validação de extensão
+        var allowedExtensions = new[] { ".pdf" };
+        var fileExtension = Path.GetExtension(pdfFile.FileName).ToLowerInvariant();
+        if (!allowedExtensions.Contains(fileExtension))
+        {
+            _logger.Warn($"Tentativa de upload com extensão inválida: {fileExtension}");
+            return BadRequest(new { message = "Apenas arquivos PDF são permitidos." });
+        }
+
+        // Validação de tipo MIME
+        var allowedMimeTypes = new[] { "application/pdf" };
+        if (!allowedMimeTypes.Contains(pdfFile.ContentType.ToLowerInvariant()))
+        {
+            _logger.Warn($"Tentativa de upload com tipo MIME inválido: {pdfFile.ContentType}");
+            return BadRequest(new { message = "Tipo de arquivo não permitido. Apenas arquivos PDF são aceitos." });
+        }
+
+        // Validação de tamanho (50MB máximo)
+        const long maxFileSize = 50 * 1024 * 1024; // 50MB
+        if (pdfFile.Length > maxFileSize)
+        {
+            _logger.Warn($"Tentativa de upload de arquivo muito grande: {pdfFile.Length} bytes");
+            return BadRequest(new { message = "Arquivo muito grande. O tamanho máximo permitido é 50MB." });
+        }
+
         var filePath = Path.GetTempFileName();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
@@ -61,13 +86,21 @@ public class UploadController : ControllerBase
         {
             _logger.Error($"Erro ao processar PDF: {ex.Message}", ex);
             _fileService.ClearDirectories();
-            return StatusCode(500, new { message = "Erro ao processar PDF", error = ex.Message });
+            return StatusCode(500, new { message = "Erro interno no processamento do PDF. Tente novamente ou entre em contato com o suporte." });
         }
         finally
         {
             if (System.IO.File.Exists(filePath))
             {
-                System.IO.File.Delete(filePath);
+                try
+                {
+                    System.IO.File.Delete(filePath);
+                    _logger.Info($"Arquivo temporário deletado: {Path.GetFileName(filePath)}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Erro ao deletar arquivo temporário: {ex.Message}", ex);
+                }
             }
         }
     }
