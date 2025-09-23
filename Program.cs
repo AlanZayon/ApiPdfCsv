@@ -11,6 +11,9 @@ using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Options;
 using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
+using ApiPdfCsv.Modules.OfxProcessing.Domain.Interfaces;
+using ApiPdfCsv.Modules.OfxProcessing.Infrastructure.Services;
+using ApiPdfCsv.Modules.OfxProcessing.Application.UseCases;
 using ApiPdfCsv.Shared.Logging;
 using ApiPdfCsv.CrossCutting.Data;
 using ApiPdfCsv.CrossCutting.Identity.Configurations;
@@ -91,16 +94,23 @@ builder.Services.Configure<FileServiceOptions>(config =>
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<ProcessPdfUseCase>();
+builder.Services.AddScoped<IOfxProcessorService, OfxProcessorService>();
+builder.Services.AddScoped<ProcessOfxUseCase>();
 
 builder.Services.AddScoped<ICodigoContaRepository, CodigoContaRepository>();
 builder.Services.AddScoped<IImpostoRepository, ImpostoRepository>();
+builder.Services.AddScoped<ITermoEspecialRepository, TermoEspecialRepository>();
 builder.Services.AddScoped<ICodigoContaService, CodigoContaService>();
 builder.Services.AddScoped<IImpostoService, ImpostoService>();
 
 // 🔹 Pega conexão do .env ou do appsettings
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 
-Console.WriteLine($"Connection String: {connStr}");
+// Log apenas se connection string está configurada (sem expor valores)
+if (builder.Environment.IsDevelopment())
+{
+    Console.WriteLine($"Connection String configured: {!string.IsNullOrEmpty(connStr)}");
+}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connStr, npgsqlOptions => npgsqlOptions.EnableRetryOnFailure()));
@@ -111,19 +121,25 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 var app = builder.Build();
 
-// Migrações automáticas
-using (var scope = app.Services.CreateScope())
+// Migrações automáticas apenas em desenvolvimento
+// Em produção, execute migrações manualmente ou via pipeline de deploy
+if (app.Environment.IsDevelopment())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.Migrate();
+    }
 }
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    app.UseHttpsRedirection();
 }
+
+// HTTPS redirection deve ser sempre aplicado
+app.UseHttpsRedirection();
 
 app.UseCors("AllowedOrigins");
 app.UseAuthentication();

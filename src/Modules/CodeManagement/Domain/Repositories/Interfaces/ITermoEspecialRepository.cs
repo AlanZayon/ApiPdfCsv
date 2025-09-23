@@ -1,12 +1,16 @@
 using ApiPdfCsv.Modules.CodeManagement.Domain.Entities;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
-namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces;
-
-public interface ITermoEspecialRepository
+namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces
 {
-    Task<IEnumerable<TermoEspecial>> ObterTodosPorUsuarioAsync(string userId);
-    Task<TermoEspecial> ObterPorIdAsync(string id, string userId);
-    Task AdicionarAsync(TermoEspecial termoEspecial);
-    Task AtualizarAsync(TermoEspecial termoEspecial);
-    Task RemoverAsync(string id, string userId);
+    public interface ITermoEspecialRepository
+    {
+        Task<TermoEspecial?> BuscarPorTermoEUsuarioAsync(string termo, string userId);
+        Task<TermoEspecial> AdicionarAsync(TermoEspecial termo);
+        Task<bool> ExisteTermoAsync(string termo, string userId);
+        Task<IEnumerable<TermoEspecial>> ObterTodosPorUsuarioAsync(string userId);
+        Task<IEnumerable<int?>> BuscarCodigosBancoPorCnpjAsync(string cnpj, string userId);
+
+    }
 }

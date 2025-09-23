@@ -8,4 +8,5 @@ public class ExcelData
     public decimal Total { get; set; }
     public string Descricao { get; set; } = string.Empty;
     public int Divisao { get; set; }
+    public int? CodigoBanco { get; set; }
 }

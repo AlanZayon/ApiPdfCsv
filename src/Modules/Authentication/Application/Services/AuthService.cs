@@ -216,19 +216,23 @@ public class AuthService : IAuthService
 
                 try
                 {
-                    // Remover todos os impostos vinculados ao usuário
                     var impostosUsuario = await _dbContext.Imposto
                         .Where(i => i.UserId == userId)
                         .ToListAsync();
 
                     _dbContext.Imposto.RemoveRange(impostosUsuario);
 
-                    // Remover todos os códigos de conta vinculados ao usuário
                     var codigosContaUsuario = await _dbContext.CodigoConta
                         .Where(c => c.UserId == userId)
                         .ToListAsync();
 
                     _dbContext.CodigoConta.RemoveRange(codigosContaUsuario);
+
+                    var termoEspecial = await _dbContext.TermoEspecial
+                        .Where(t => t.UserId == userId)
+                        .ToListAsync();
+
+                    _dbContext.TermoEspecial.RemoveRange(termoEspecial);
 
                     // Salvar alterações antes de remover o usuário
                     await _dbContext.SaveChangesAsync();
@@ -307,7 +311,6 @@ public class AuthService : IAuthService
             });
             }
 
-            // Validar se o novo nome não está vazio
             if (string.IsNullOrWhiteSpace(request.NewFullName))
             {
                 return Result<bool>.Failure("Nome inválido", new List<ValidationError>
@@ -316,7 +319,6 @@ public class AuthService : IAuthService
             });
             }
 
-            // Verificar se o nome realmente mudou
             if (user.FullName == request.NewFullName)
             {
                 return Result<bool>.Failure("O novo nome deve ser diferente do atual", new List<ValidationError>

@@ -14,6 +14,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<CodigoConta> CodigoConta { get; set; }
     public DbSet<Imposto> Imposto { get; set; }
+    public DbSet<TermoEspecial> TermoEspecial { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -51,5 +52,35 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.Tipo).HasColumnName("tipo");
             entity.Property(e => e.UserId).HasColumnName("userid");
         });
+
+        builder.Entity<TermoEspecial>(entity =>
+       {
+           entity.ToTable("TermoEspecial");
+           entity.HasKey(e => e.Id);
+
+           entity.Property(e => e.Id)
+               .HasColumnName("id")
+               .IsRequired();
+
+           entity.Property(e => e.Termo)
+               .HasColumnName("termo")
+               .IsRequired();
+
+           entity.Property(e => e.UserId)
+               .HasColumnName("userId")
+               .IsRequired();
+
+           entity.Property(e => e.CodigoDebito)
+               .HasColumnName("codigodebito");
+
+           entity.Property(e => e.CodigoCredito)
+               .HasColumnName("codigocredito");
+
+           entity.Property(e => e.CodigoBanco)
+               .HasColumnName("codigoBanco");
+
+           entity.Property(e => e.CNPJ)
+               .HasColumnName("CNPJ");
+       });
     }
 }

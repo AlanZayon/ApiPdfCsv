@@ -29,26 +29,69 @@ public static class ExcelGenerator
         var rowIndex = 1;
         foreach (var item in data)
         {
-            // Primeira linha (débito)
-            worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-            worksheet.Cell(rowIndex, 2).Value = item.Debito;
-            worksheet.Cell(rowIndex, 3).Value = "";
-            worksheet.Cell(rowIndex, 4).Value = item.Total;
-            worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-            worksheet.Cell(rowIndex, 6).Value = "1";
-            rowIndex++;
+            // Verificar se existe o campo CodigoBanco
+            bool hasCodigoBanco = item.CodigoBanco.HasValue && !string.IsNullOrEmpty(item.CodigoBanco.Value.ToString());
 
-            // Segunda linha (crédito)
-            worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-            worksheet.Cell(rowIndex, 2).Value = "";
-            worksheet.Cell(rowIndex, 3).Value = item.Credito;
-            worksheet.Cell(rowIndex, 4).Value = item.Total;
-            worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-            worksheet.Cell(rowIndex, 6).Value = "";
-            rowIndex++;
+            if (item.Total < 0)
+            {
+                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+
+                if (hasCodigoBanco)
+                {
+                    // Se tem CodigoBanco e Total é negativo, coloca CodigoBanco no crédito
+                    worksheet.Cell(rowIndex, 2).Value = item.CodigoBanco;
+                    worksheet.Cell(rowIndex, 3).Value = "";
+                }
+                else
+                {
+                    // Se não tem CodigoBanco, faz normalmente
+                    worksheet.Cell(rowIndex, 2).Value = item.Credito;
+                    worksheet.Cell(rowIndex, 3).Value = "";
+                }
+
+                worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                worksheet.Cell(rowIndex, 6).Value = "1";
+                rowIndex++;
+
+                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                worksheet.Cell(rowIndex, 2).Value = "";
+                worksheet.Cell(rowIndex, 3).Value = item.Debito;
+                worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                worksheet.Cell(rowIndex, 6).Value = "";
+                rowIndex++;
+            }
+            else
+            {
+                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+
+                if (hasCodigoBanco)
+                {
+                    worksheet.Cell(rowIndex, 2).Value = item.CodigoBanco;
+                    worksheet.Cell(rowIndex, 3).Value = "";
+                }
+                else
+                {
+                    worksheet.Cell(rowIndex, 2).Value = item.Debito;
+                    worksheet.Cell(rowIndex, 3).Value = "";
+                }
+
+                worksheet.Cell(rowIndex, 4).Value = item.Total;
+                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                worksheet.Cell(rowIndex, 6).Value = "1";
+                rowIndex++;
+
+                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                worksheet.Cell(rowIndex, 2).Value = "";
+                worksheet.Cell(rowIndex, 3).Value = item.Credito;
+                worksheet.Cell(rowIndex, 4).Value = item.Total;
+                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                worksheet.Cell(rowIndex, 6).Value = "";
+                rowIndex++;
+            }
         }
 
-        // Converter para CSV
         var csvContent = ConvertToCSV(worksheet);
         File.WriteAllText(outputPath, csvContent);
     }

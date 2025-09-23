@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
+using ApiPdfCsv.Modules.OfxProcessing.Domain.Entities;
+using ApiPdfCsv.Modules.OfxProcessing.Application.UseCases;
+using ApiPdfCsv.Modules.OfxProcessing.Domain.Interfaces;
 using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
 using System.Security.Claims;
 using ApiPdfCsv.Shared.Logging;
@@ -15,53 +18,86 @@ namespace ApiPdfCsv.API.Controllers;
 public class UploadController : ControllerBase
 {
     private readonly ILogger _logger;
-    private readonly IPdfProcessorService _pdfProcessorService;
     private readonly IFileService _fileService;
     private readonly ProcessPdfUseCase _processPdfUseCase;
+    private readonly ProcessOfxUseCase _processOfxUseCase;
 
-
-    public UploadController(ILogger logger, IPdfProcessorService pdfProcessorService, IFileService fileService, ProcessPdfUseCase processPdfUseCase)
+    public UploadController(
+        ILogger logger,
+        IFileService fileService,
+        ProcessPdfUseCase processPdfUseCase,
+        ProcessOfxUseCase processOfxUseCase
+    )
     {
         _logger = logger;
-        _pdfProcessorService = pdfProcessorService;
         _fileService = fileService;
         _processPdfUseCase = processPdfUseCase;
-
+        _processOfxUseCase = processOfxUseCase;
     }
 
     [HttpPost("upload")]
-    public async Task<IActionResult> Upload(IFormFile pdfFile)
+    public async Task<IActionResult> Upload(IFormFile file)
     {
-        if (pdfFile == null || pdfFile.Length == 0)
+        if (file == null || file.Length == 0)
         {
             _logger.Warn("Tentativa de upload sem envio de arquivo.");
             return BadRequest(new { message = "Arquivo não enviado." });
         }
 
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var filePath = Path.GetTempFileName();
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
         try
         {
             await using (var stream = System.IO.File.Create(filePath))
             {
-                await pdfFile.CopyToAsync(stream);
+                await file.CopyToAsync(stream);
             }
 
-            _logger.Info($"Iniciando processamento do PDF: {filePath}");
+            _logger.Info($"Arquivo recebido: {file.FileName}, extensão: {extension}");
 
-            var command = new ProcessPdfCommand(filePath, userId ?? string.Empty);
-            var result = await _processPdfUseCase.Execute(command);
+            switch (extension)
+            {
+                case ".pdf":
+                    var pdfCommand = new ProcessPdfCommand(filePath, userId);
+                    var pdfResult = await _processPdfUseCase.Execute(pdfCommand);
+                    _logger.Info($"Processamento PDF concluído com sucesso: {pdfResult}");
+                    return Ok(new { type = "pdf", result = pdfResult });
 
+                case ".ofx":
+                    var ofxCommand = new ProcessOfxCommand(filePath, cnpj,userId);
+                    var ofxResult = await _processOfxUseCase.Execute(ofxCommand);
+                    if (ofxResult.TransacoesPendentes != null && ofxResult.TransacoesPendentes.Any())
+                    {
+                        return Ok(new
+                        {
+                            type = "ofx",
+                            status = "pending_classification",
+                            transacoesClassificadas = ofxResult.TransacoesClassificadas,
+                            pendingTransactions = ofxResult.TransacoesPendentes,
+                            filePath
+                        });
+                    }
 
-            _logger.Info($"Processamento concluído com sucesso: {result}");
-            return Ok(new { result });
+                    return Ok(new
+                    {
+                        type = "ofx",
+                        status = "completed",
+                        outputPath = ofxResult.OutputPath
+                    });
+
+                default:
+                    _logger.Warn($"Extensão de arquivo não suportada: {extension}");
+                    return BadRequest(new { message = "Tipo de arquivo não suportado. Use apenas PDF ou OFX." });
+            }
         }
         catch (Exception ex)
         {
-            _logger.Error($"Erro ao processar PDF: {ex.Message}", ex);
+            _logger.Error($"Erro ao processar arquivo {file.FileName}: {ex.Message}", ex);
             _fileService.ClearDirectories();
-            return StatusCode(500, new { message = "Erro ao processar PDF", error = ex.Message });
+            return StatusCode(500, new { message = "Erro ao processar arquivo", error = ex.Message });
         }
         finally
         {
@@ -71,4 +107,25 @@ public class UploadController : ControllerBase
             }
         }
     }
+
+    [HttpPost("finalizar-processamento")]
+    public async Task<IActionResult> FinalizarProcessamento([FromBody] FinalizacaoRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        var outputPath = await _processOfxUseCase.FinalizarProcessamento(
+            request.TransacoesClassificadas,
+            request.Classificacoes,
+            request.TransacoesPendentes,
+            userId,
+            request.CNPJ
+        );
+
+        return Ok(new
+        {
+            status = "completed",
+            outputPath
+        });
+    }
+
 }
