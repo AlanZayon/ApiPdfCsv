@@ -32,63 +32,60 @@ public static class ExcelGenerator
             // Verificar se existe o campo CodigoBanco
             bool hasCodigoBanco = item.CodigoBanco.HasValue && !string.IsNullOrEmpty(item.CodigoBanco.Value.ToString());
 
-            if (item.Total < 0)
+            if (hasCodigoBanco)
             {
+                // Se tem Código Banco - apenas UMA linha com débito primeiro e crédito depois
                 worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-
-                if (hasCodigoBanco)
-                {
-                    // Se tem CodigoBanco e Total é negativo, coloca CodigoBanco no crédito
-                    worksheet.Cell(rowIndex, 2).Value = item.CodigoBanco;
-                    worksheet.Cell(rowIndex, 3).Value = "";
-                }
-                else
-                {
-                    // Se não tem CodigoBanco, faz normalmente
-                    worksheet.Cell(rowIndex, 2).Value = item.Credito;
-                    worksheet.Cell(rowIndex, 3).Value = "";
-                }
-
+                worksheet.Cell(rowIndex, 2).Value = item.Debito;  // Débito primeiro
+                worksheet.Cell(rowIndex, 3).Value = item.Credito; // Crédito depois
                 worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
                 worksheet.Cell(rowIndex, 5).Value = item.Descricao;
                 worksheet.Cell(rowIndex, 6).Value = "1";
-                rowIndex++;
-
-                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-                worksheet.Cell(rowIndex, 2).Value = "";
-                worksheet.Cell(rowIndex, 3).Value = item.Debito;
-                worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
-                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                worksheet.Cell(rowIndex, 6).Value = "";
                 rowIndex++;
             }
             else
             {
-                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-
-                if (hasCodigoBanco)
+                // Se não tem Código Banco - DUAS linhas normais (débito primeiro e crédito depois)
+                if (item.Total < 0)
                 {
-                    worksheet.Cell(rowIndex, 2).Value = item.CodigoBanco;
+                    // Linha 1 - Débito
+                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 2).Value = item.Debito;
                     worksheet.Cell(rowIndex, 3).Value = "";
+                    worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                    worksheet.Cell(rowIndex, 6).Value = "1";
+                    rowIndex++;
+
+                    // Linha 2 - Crédito
+                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 2).Value = "";
+                    worksheet.Cell(rowIndex, 3).Value = item.Credito;
+                    worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                    worksheet.Cell(rowIndex, 6).Value = "";
+                    rowIndex++;
                 }
                 else
                 {
+                    // Linha 1 - Débito
+                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
                     worksheet.Cell(rowIndex, 2).Value = item.Debito;
                     worksheet.Cell(rowIndex, 3).Value = "";
+                    worksheet.Cell(rowIndex, 4).Value = item.Total;
+                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                    worksheet.Cell(rowIndex, 6).Value = "1";
+                    rowIndex++;
+
+                    // Linha 2 - Crédito
+                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 2).Value = "";
+                    worksheet.Cell(rowIndex, 3).Value = item.Credito;
+                    worksheet.Cell(rowIndex, 4).Value = item.Total;
+                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                    worksheet.Cell(rowIndex, 6).Value = "";
+                    rowIndex++;
                 }
-
-                worksheet.Cell(rowIndex, 4).Value = item.Total;
-                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                worksheet.Cell(rowIndex, 6).Value = "1";
-                rowIndex++;
-
-                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-                worksheet.Cell(rowIndex, 2).Value = "";
-                worksheet.Cell(rowIndex, 3).Value = item.Credito;
-                worksheet.Cell(rowIndex, 4).Value = item.Total;
-                worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                worksheet.Cell(rowIndex, 6).Value = "";
-                rowIndex++;
             }
         }
 

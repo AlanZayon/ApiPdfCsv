@@ -31,6 +31,8 @@ public class DownloadController : ControllerBase
 
             _logger.Info($"Download realizado com sucesso: {fileName}");
 
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
             Response.OnCompleted(() =>
             {
                 try

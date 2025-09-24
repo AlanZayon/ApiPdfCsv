@@ -95,7 +95,7 @@ public class ProcessOfxUseCase
             Directory.CreateDirectory(outputDir);
         }
 
-        var outputPath = Path.Combine(outputDir, "PGTO.csv");
+        var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
 
         var descricoesProcessadas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var descricoesPendentes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -188,7 +188,7 @@ public class ProcessOfxUseCase
             Directory.CreateDirectory(outputDir);
         }
 
-        var outputPath = Path.Combine(outputDir, "PGTO_Finalizado.csv");
+        var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
 
         var classificacoesProcessadas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
