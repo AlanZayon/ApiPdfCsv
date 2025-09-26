@@ -142,8 +142,29 @@ public class OfxProcessorService : IOfxProcessorService
                 }
             }
 
+            if (line.Contains(startTag) && !line.Contains(endTag))
+            {
+                int startIndex = line.IndexOf(startTag) + startTag.Length;
+
+                int endIndex = line.Length;
+
+                for (int i = startIndex; i < line.Length; i++)
+                {
+                    if (line[i] == '<' && i > startIndex)
+                    {
+                        endIndex = i;
+                        break;
+                    }
+                }
+
+                if (startIndex >= 0 && endIndex > startIndex)
+                {
+                    return line.Substring(startIndex, endIndex - startIndex).Trim();
+                }
+            }
+
             var pattern = $"<{tagName}>(.*?)</{tagName}>";
-            var match = Regex.Match(line, pattern);
+            var match = Regex.Match(line, pattern, RegexOptions.Singleline);
             if (match.Success && match.Groups.Count > 1)
             {
                 return match.Groups[1].Value.Trim();

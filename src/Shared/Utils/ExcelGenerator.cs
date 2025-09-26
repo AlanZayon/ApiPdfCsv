@@ -18,7 +18,6 @@ public static class ExcelGenerator
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add("Relatório");
 
-        // Configurar colunas
         worksheet.Column(1).Width = 30;
         worksheet.Column(2).Width = 30;
         worksheet.Column(3).Width = 30;
@@ -29,15 +28,13 @@ public static class ExcelGenerator
         var rowIndex = 1;
         foreach (var item in data)
         {
-            // Verificar se existe o campo CodigoBanco
             bool hasCodigoBanco = item.CodigoBanco.HasValue && !string.IsNullOrEmpty(item.CodigoBanco.Value.ToString());
 
             if (hasCodigoBanco)
             {
-                // Se tem Código Banco - apenas UMA linha com débito primeiro e crédito depois
                 worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
-                worksheet.Cell(rowIndex, 2).Value = item.Debito;  // Débito primeiro
-                worksheet.Cell(rowIndex, 3).Value = item.Credito; // Crédito depois
+                worksheet.Cell(rowIndex, 2).Value = item.Debito;
+                worksheet.Cell(rowIndex, 3).Value = item.Credito;
                 worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
                 worksheet.Cell(rowIndex, 5).Value = item.Descricao;
                 worksheet.Cell(rowIndex, 6).Value = "1";
@@ -45,10 +42,8 @@ public static class ExcelGenerator
             }
             else
             {
-                // Se não tem Código Banco - DUAS linhas normais (débito primeiro e crédito depois)
                 if (item.Total < 0)
                 {
-                    // Linha 1 - Débito
                     worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
                     worksheet.Cell(rowIndex, 2).Value = item.Debito;
                     worksheet.Cell(rowIndex, 3).Value = "";
@@ -57,7 +52,6 @@ public static class ExcelGenerator
                     worksheet.Cell(rowIndex, 6).Value = "1";
                     rowIndex++;
 
-                    // Linha 2 - Crédito
                     worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
                     worksheet.Cell(rowIndex, 2).Value = "";
                     worksheet.Cell(rowIndex, 3).Value = item.Credito;
@@ -68,7 +62,6 @@ public static class ExcelGenerator
                 }
                 else
                 {
-                    // Linha 1 - Débito
                     worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
                     worksheet.Cell(rowIndex, 2).Value = item.Debito;
                     worksheet.Cell(rowIndex, 3).Value = "";
@@ -77,7 +70,6 @@ public static class ExcelGenerator
                     worksheet.Cell(rowIndex, 6).Value = "1";
                     rowIndex++;
 
-                    // Linha 2 - Crédito
                     worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
                     worksheet.Cell(rowIndex, 2).Value = "";
                     worksheet.Cell(rowIndex, 3).Value = item.Credito;

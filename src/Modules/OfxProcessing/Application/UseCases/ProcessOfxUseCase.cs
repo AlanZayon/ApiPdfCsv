@@ -29,9 +29,13 @@ public class ProcessOfxCommand
 public record TransacaoPendente
 {
     public string Descricao { get; set; } = string.Empty;
-    public string Data { get; set; } = string.Empty;
-    public decimal Valor { get; set; }
+    public List<string> Datas { get; set; } = new List<string>();
+    public List<decimal> Valores { get; set; } = new List<decimal>();
     public List<int>? CodigosBanco { get; set; }
+    public string CreditoError { get; set; } = "";
+    public bool CreditoLocked { get; set; } = false;
+    public string DebitoError { get; set; } = "";
+    public bool DebitoLocked { get; set; } = false;
 }
 
 public record ClassificacaoTransacao
@@ -81,7 +85,7 @@ public class ProcessOfxUseCase
         List<int?> codigosBanco = new List<int?>();
         if (!string.IsNullOrEmpty(command.CNPJ))
         {
-           codigosBanco = (await _termoRepository.BuscarCodigosBancoPorCnpjAsync(command.CNPJ, command.UserId)).ToList();
+            codigosBanco = (await _termoRepository.BuscarCodigosBancoPorCnpjAsync(command.CNPJ, command.UserId)).ToList();
             _logger.Info($"Encontrados {codigosBanco.Count} código(s) de banco para o CNPJ: {command.CNPJ}");
         }
 
@@ -97,21 +101,25 @@ public class ProcessOfxUseCase
 
         var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
 
-        var descricoesProcessadas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var descricoesPendentes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Dicionário para agrupar transações pendentes por descrição
+        var transacoesPendentesAgrupadas = new Dictionary<string, TransacaoPendente>(StringComparer.OrdinalIgnoreCase);
+
+        // Dicionário para agrupar transações classificadas por descrição
+        var transacoesClassificadasAgrupadas = new Dictionary<string, List<ExcelData>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var trans in result.Transacoes)
         {
-            if (descricoesProcessadas.Contains(trans.Descricao))
-            {
-                continue;
-            }
-
             var termoEspecial = await _termoRepository.BuscarPorTermoEUsuarioAsync(trans.Descricao, command.UserId);
 
             if (termoEspecial != null)
             {
-                transacoesClassificadas.Add(new ExcelData
+                // Para transações classificadas, agrupa por descrição mas mantém todas as ocorrências
+                if (!transacoesClassificadasAgrupadas.ContainsKey(trans.Descricao))
+                {
+                    transacoesClassificadasAgrupadas[trans.Descricao] = new List<ExcelData>();
+                }
+
+                transacoesClassificadasAgrupadas[trans.Descricao].Add(new ExcelData
                 {
                     DataDeArrecadacao = trans.DataTransacao,
                     Debito = termoEspecial.CodigoDebito,
@@ -120,39 +128,37 @@ public class ProcessOfxUseCase
                     Descricao = trans.Descricao,
                     Divisao = 1,
                     CodigoBanco = termoEspecial.CodigoBanco,
-
                 });
-
-                descricoesProcessadas.Add(trans.Descricao);
             }
             else
             {
-                if (!descricoesPendentes.Contains(trans.Descricao))
+                // Agrupa transações pendentes por descrição
+                if (!transacoesPendentesAgrupadas.ContainsKey(trans.Descricao))
                 {
-                    var transacaoPendente = new TransacaoPendente
+                    transacoesPendentesAgrupadas[trans.Descricao] = new TransacaoPendente
                     {
                         Descricao = trans.Descricao,
-                        Data = trans.DataTransacao,
-                        Valor = trans.Valor
-                    };
-
-                    if (codigosBanco != null && codigosBanco.Any())
-                    {
-                        transacaoPendente.CodigosBanco = codigosBanco
+                        CodigosBanco = codigosBanco?
                             .Where(x => x.HasValue)
                             .Select(x => x.GetValueOrDefault())
-                            .ToList();
-                    }
-
-                    transacoesPendentes.Add(transacaoPendente);
-                    descricoesPendentes.Add(trans.Descricao);
+                            .ToList() ?? new List<int>()
+                    };
                 }
+
+                // Adiciona data e valor às listas
+                transacoesPendentesAgrupadas[trans.Descricao].Datas.Add(trans.DataTransacao);
+                transacoesPendentesAgrupadas[trans.Descricao].Valores.Add(trans.Valor);
             }
         }
 
+        // Converte os dicionários para listas
+        transacoesPendentes = transacoesPendentesAgrupadas.Values.ToList();
+
+        // Junta todas as transações classificadas (mantendo todas as ocorrências)
+        transacoesClassificadas = transacoesClassificadasAgrupadas.Values.SelectMany(x => x).ToList();
+
         if (transacoesPendentes.Any())
         {
-
             return new ProcessOfxResult(
                 "Processamento parcial - há transações pendentes de classificação",
                 transacoesClassificadas,
@@ -161,7 +167,6 @@ public class ProcessOfxUseCase
         }
 
         ExcelGenerator.Generate(transacoesClassificadas, outputPath);
-
 
         return new ProcessOfxResult(
             "Processamento OFX concluído",
@@ -190,11 +195,8 @@ public class ProcessOfxUseCase
 
         var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
 
-        var classificacoesProcessadas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         foreach (var classificacao in classificacoes)
         {
-
             var transacaoPendente = transacoesPendentes.FirstOrDefault(
                 tp => tp.Descricao.Equals(classificacao.Descricao, StringComparison.OrdinalIgnoreCase));
 
@@ -219,17 +221,19 @@ public class ProcessOfxUseCase
                     _logger.Info($"Novo termo salvo no banco para o usuário {userId} e CNPJ {cnpj}: {classificacao.Descricao}");
                 }
 
-                todasTransacoes.Add(new ExcelData
+                for (int i = 0; i < transacaoPendente.Datas.Count; i++)
                 {
-                    DataDeArrecadacao = transacaoPendente.Data,
-                    Debito = classificacao.CodigoDebito,
-                    Credito = classificacao.CodigoCredito,
-                    Total = transacaoPendente.Valor,
-                    Descricao = classificacao.Descricao,
-                    Divisao = 1
-                });
-
-                classificacoesProcessadas.Add(classificacao.Descricao);
+                    todasTransacoes.Add(new ExcelData
+                    {
+                        DataDeArrecadacao = transacaoPendente.Datas[i],
+                        Debito = classificacao.CodigoDebito,
+                        Credito = classificacao.CodigoCredito,
+                        Total = transacaoPendente.Valores[i],
+                        Descricao = classificacao.Descricao,
+                        Divisao = 1,
+                        CodigoBanco = classificacao.CodigoBanco
+                    });
+                }
             }
         }
 
