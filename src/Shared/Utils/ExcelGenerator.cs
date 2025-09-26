@@ -3,6 +3,7 @@ using ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace ApiPdfCsv.Shared.Utils;
 
@@ -82,7 +83,7 @@ public static class ExcelGenerator
         }
 
         var csvContent = ConvertToCSV(worksheet);
-        File.WriteAllText(outputPath, csvContent);
+        File.WriteAllText(outputPath, csvContent,new UTF8Encoding(true));
     }
 
     private static string ConvertToCSV(IXLWorksheet worksheet)

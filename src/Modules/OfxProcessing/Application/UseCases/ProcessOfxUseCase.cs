@@ -9,6 +9,7 @@ using ApiPdfCsv.Shared.Utils;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 
 namespace ApiPdfCsv.Modules.OfxProcessing.Application.UseCases;
 
@@ -101,11 +102,9 @@ public class ProcessOfxUseCase
 
         var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
 
-        // Dicionário para agrupar transações pendentes por descrição
-        var transacoesPendentesAgrupadas = new Dictionary<string, TransacaoPendente>(StringComparer.OrdinalIgnoreCase);
+        var transacoesPendentesAgrupadas = new Dictionary<string, TransacaoPendente>(StringComparer.InvariantCultureIgnoreCase);
 
-        // Dicionário para agrupar transações classificadas por descrição
-        var transacoesClassificadasAgrupadas = new Dictionary<string, List<ExcelData>>(StringComparer.OrdinalIgnoreCase);
+        var transacoesClassificadasAgrupadas = new Dictionary<string, List<ExcelData>>(StringComparer.InvariantCultureIgnoreCase);
 
         foreach (var trans in result.Transacoes)
         {
@@ -113,7 +112,6 @@ public class ProcessOfxUseCase
 
             if (termoEspecial != null)
             {
-                // Para transações classificadas, agrupa por descrição mas mantém todas as ocorrências
                 if (!transacoesClassificadasAgrupadas.ContainsKey(trans.Descricao))
                 {
                     transacoesClassificadasAgrupadas[trans.Descricao] = new List<ExcelData>();
@@ -132,7 +130,6 @@ public class ProcessOfxUseCase
             }
             else
             {
-                // Agrupa transações pendentes por descrição
                 if (!transacoesPendentesAgrupadas.ContainsKey(trans.Descricao))
                 {
                     transacoesPendentesAgrupadas[trans.Descricao] = new TransacaoPendente
@@ -145,16 +142,13 @@ public class ProcessOfxUseCase
                     };
                 }
 
-                // Adiciona data e valor às listas
                 transacoesPendentesAgrupadas[trans.Descricao].Datas.Add(trans.DataTransacao);
                 transacoesPendentesAgrupadas[trans.Descricao].Valores.Add(trans.Valor);
             }
         }
 
-        // Converte os dicionários para listas
         transacoesPendentes = transacoesPendentesAgrupadas.Values.ToList();
 
-        // Junta todas as transações classificadas (mantendo todas as ocorrências)
         transacoesClassificadas = transacoesClassificadasAgrupadas.Values.SelectMany(x => x).ToList();
 
         if (transacoesPendentes.Any())
@@ -198,7 +192,7 @@ public class ProcessOfxUseCase
         foreach (var classificacao in classificacoes)
         {
             var transacaoPendente = transacoesPendentes.FirstOrDefault(
-                tp => tp.Descricao.Equals(classificacao.Descricao, StringComparison.OrdinalIgnoreCase));
+                tp => string.Equals(tp.Descricao, classificacao.Descricao, StringComparison.InvariantCultureIgnoreCase));
 
             if (transacaoPendente != null)
             {

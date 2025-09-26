@@ -20,8 +20,7 @@ public class OfxProcessorService : IOfxProcessorService
     {
         _logger.Info($"Iniciando processamento do OFX: {filePath}");
 
-        // ✅ Uso de API assíncrona de leitura
-        var ofxContent = await File.ReadAllTextAsync(filePath, Encoding.GetEncoding("iso-8859-1"));
+        var ofxContent = await File.ReadAllTextAsync(filePath, Encoding.UTF8);
 
         var transacoes = new List<OfxTransactionData>();
         ProcessarTransacoesDirect(ofxContent, transacoes);
