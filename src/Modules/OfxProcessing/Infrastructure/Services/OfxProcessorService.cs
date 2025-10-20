@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Ude;
 using ApiPdfCsv.Modules.OfxProcessing.Domain.Entities;
 using ApiPdfCsv.Modules.OfxProcessing.Domain.Interfaces;
 using ApiPdfCsv.Shared.Logging;
@@ -20,7 +21,7 @@ public class OfxProcessorService : IOfxProcessorService
     {
         _logger.Info($"Iniciando processamento do OFX: {filePath}");
 
-        var ofxContent = await File.ReadAllTextAsync(filePath, Encoding.UTF8);
+        var ofxContent = await File.ReadAllTextAsync(filePath, DetectEncoding(filePath));
 
         var transacoes = new List<OfxTransactionData>();
         ProcessarTransacoesDirect(ofxContent, transacoes);
@@ -114,7 +115,11 @@ public class OfxProcessorService : IOfxProcessorService
             }
             else if (line.StartsWith("<MEMO>"))
             {
-                transaction.Descricao = ExtractTagValue(line, "MEMO");
+                var descricao = ExtractTagValue(line, "MEMO");
+
+                descricao = Regex.Replace(descricao, @"\s+QTD\s+\d+\s*$", "", RegexOptions.IgnoreCase);
+
+                transaction.Descricao = descricao.Trim();
             }
         }
         catch (Exception ex)
@@ -199,4 +204,17 @@ public class OfxProcessorService : IOfxProcessorService
             return ofxDate;
         }
     }
+    private Encoding DetectEncoding(string filePath)
+    {
+        using var fs = File.OpenRead(filePath);
+        var detector = new CharsetDetector();
+        detector.Feed(fs);
+        detector.DataEnd();
+
+        if (detector.Charset != null)
+            return Encoding.GetEncoding(detector.Charset);
+
+        return Encoding.UTF8;
+    }
+
 }

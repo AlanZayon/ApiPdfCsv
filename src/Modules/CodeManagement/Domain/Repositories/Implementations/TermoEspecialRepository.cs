@@ -27,13 +27,20 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Implementations
 
         public async Task<TermoEspecial> AdicionarAsync(TermoEspecial termo)
         {
-            // Gera um novo ID se não foi fornecido
             if (string.IsNullOrEmpty(termo.Id))
             {
                 termo.Id = Guid.NewGuid().ToString();
             }
 
             await _context.TermoEspecial.AddAsync(termo);
+            await _context.SaveChangesAsync();
+
+            return termo;
+        }
+
+        public async Task<TermoEspecial> AtualizarAsync(TermoEspecial termo)
+        {
+            _context.TermoEspecial.Update(termo);
             await _context.SaveChangesAsync();
 
             return termo;
@@ -53,14 +60,97 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Implementations
                 .Where(t => t.UserId == userId)
                 .ToListAsync();
         }
-        public async Task<IEnumerable<int?>> BuscarCodigosBancoPorCnpjAsync(string cnpj, string userId)
+        public async Task<IEnumerable<int?>> BuscarCodigosBancoPorCnpjAsync(
+            string cnpj,
+            string userId,
+            string? codigoBanco = null)
         {
+            int? codigoBancoInt = null;
+            if (int.TryParse(codigoBanco, out var parsed))
+                codigoBancoInt = parsed;
+
             return await _context.TermoEspecial
-                .Where(t => t.CNPJ == cnpj && t.UserId == userId)
+                .Where(t =>
+                    t.CNPJ == cnpj &&
+                    t.UserId == userId &&
+                    t.CodigoBanco == codigoBancoInt)
                 .Select(t => t.CodigoBanco)
                 .Distinct()
                 .ToListAsync();
         }
-    
+
+        public async Task<TermoEspecial?> BuscarPorTermoUsuarioCnpjEBancoAsync(
+    string termo, string userId, string cnpj, int? codigoBanco)
+        {
+            return await _context.TermoEspecial
+                .FirstOrDefaultAsync(t =>
+                    t.Termo == termo &&
+                    t.UserId == userId &&
+                    t.CNPJ == cnpj &&
+                    t.CodigoBanco == codigoBanco);
+        }
+        public async Task<IEnumerable<TermoEspecial>> BuscarPorUsuarioCnpjEBancoAsync(
+            string userId, string cnpj, int? codigoBanco)
+        {
+            return await _context.TermoEspecial
+                .Where(t =>
+                    t.UserId == userId &&
+                    t.CNPJ == cnpj &&
+                    t.CodigoBanco == codigoBanco)
+                .ToListAsync();
+        }
+
+
+        public async Task<TermoEspecial?> BuscarPorTermoUsuarioECnpjAsync(
+            string termo, string userId, string cnpj)
+        {
+            return await _context.TermoEspecial
+                .FirstOrDefaultAsync(t =>
+                    t.Termo == termo &&
+                    t.UserId == userId &&
+                    t.CNPJ == cnpj);
+        }
+        public async Task<TermoEspecial?> BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
+string termo,
+string userId,
+string cnpj,
+int? codigoBanco,
+bool tipoPositivo)
+        {
+            return await _context.TermoEspecial
+                .FirstOrDefaultAsync(t =>
+                    t.Termo == termo &&
+                    t.UserId == userId &&
+                    t.CNPJ == cnpj &&
+                    t.CodigoBanco == codigoBanco &&
+                    t.TipoValor == tipoPositivo);
+        }
+
+        public async Task<TermoEspecial?> BuscarPorTermoUsuarioECnpjETipoAsync(
+    string termo,
+    string userId,
+    string cnpj,
+    bool tipoPositivo)
+        {
+            return await _context.TermoEspecial
+                .FirstOrDefaultAsync(t =>
+                    t.Termo == termo &&
+                    t.UserId == userId &&
+                    t.CNPJ == cnpj &&
+                    t.TipoValor == tipoPositivo);
+        }
+
+        public async Task<bool> SalvarAlteracoesAsync()
+        {
+            try
+            {
+                return await _context.SaveChangesAsync() > 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
     }
 }

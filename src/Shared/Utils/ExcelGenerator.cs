@@ -16,6 +16,8 @@ public static class ExcelGenerator
             throw new InvalidDataException("Nenhum dado para gerar o CSV");
         }
 
+        var dadosOrdenados = data.OrderBy(item => ParseData(item.DataDeArrecadacao)).ToList();
+
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add("Relatório");
 
@@ -27,13 +29,13 @@ public static class ExcelGenerator
         worksheet.Column(6).Width = 30;
 
         var rowIndex = 1;
-        foreach (var item in data)
+        foreach (var item in dadosOrdenados)
         {
             bool hasCodigoBanco = item.CodigoBanco.HasValue && !string.IsNullOrEmpty(item.CodigoBanco.Value.ToString());
 
             if (hasCodigoBanco)
             {
-                worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
                 worksheet.Cell(rowIndex, 2).Value = item.Debito;
                 worksheet.Cell(rowIndex, 3).Value = item.Credito;
                 worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
@@ -45,7 +47,7 @@ public static class ExcelGenerator
             {
                 if (item.Total < 0)
                 {
-                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
                     worksheet.Cell(rowIndex, 2).Value = item.Debito;
                     worksheet.Cell(rowIndex, 3).Value = "";
                     worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
@@ -53,7 +55,7 @@ public static class ExcelGenerator
                     worksheet.Cell(rowIndex, 6).Value = "1";
                     rowIndex++;
 
-                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
                     worksheet.Cell(rowIndex, 2).Value = "";
                     worksheet.Cell(rowIndex, 3).Value = item.Credito;
                     worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
@@ -63,7 +65,7 @@ public static class ExcelGenerator
                 }
                 else
                 {
-                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
                     worksheet.Cell(rowIndex, 2).Value = item.Debito;
                     worksheet.Cell(rowIndex, 3).Value = "";
                     worksheet.Cell(rowIndex, 4).Value = item.Total;
@@ -71,7 +73,7 @@ public static class ExcelGenerator
                     worksheet.Cell(rowIndex, 6).Value = "1";
                     rowIndex++;
 
-                    worksheet.Cell(rowIndex, 1).Value = item.DataDeArrecadacao;
+                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
                     worksheet.Cell(rowIndex, 2).Value = "";
                     worksheet.Cell(rowIndex, 3).Value = item.Credito;
                     worksheet.Cell(rowIndex, 4).Value = item.Total;
@@ -83,7 +85,22 @@ public static class ExcelGenerator
         }
 
         var csvContent = ConvertToCSV(worksheet);
-        File.WriteAllText(outputPath, csvContent,new UTF8Encoding(true));
+        File.WriteAllText(outputPath, csvContent, new UTF8Encoding(true));
+    }
+
+    private static DateTime ParseData(string dataString)
+    {
+        if (DateTime.TryParseExact(dataString, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime data))
+        {
+            return data;
+        }
+        
+        if (DateTime.TryParse(dataString, CultureInfo.GetCultureInfo("pt-BR"), DateTimeStyles.None, out data))
+        {
+            return data;
+        }
+        
+        return DateTime.MinValue;
     }
 
     private static string ConvertToCSV(IXLWorksheet worksheet)

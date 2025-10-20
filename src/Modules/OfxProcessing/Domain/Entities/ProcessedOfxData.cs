@@ -5,6 +5,7 @@ public class OfxTransactionData
     public string DataTransacao { get; set; } = string.Empty;
     public decimal Valor { get; set; }
     public string Descricao { get; set; } = string.Empty;
+    public int CodigoBanco { get; set; } 
 }
 
 public class ProcessedOfxData

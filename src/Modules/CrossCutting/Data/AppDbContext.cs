@@ -81,6 +81,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
            entity.Property(e => e.CNPJ)
                .HasColumnName("CNPJ");
+
+           entity.Property(e => e.TipoValor)
+            .HasColumnName("tipovalor");
        });
     }
 }

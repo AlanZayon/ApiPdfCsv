@@ -47,6 +47,7 @@ public class UploadController : ControllerBase
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var filePath = Path.GetTempFileName();
         var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
+        var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
         try
@@ -67,7 +68,7 @@ public class UploadController : ControllerBase
                     return Ok(new { type = "pdf", result = pdfResult });
 
                 case ".ofx":
-                    var ofxCommand = new ProcessOfxCommand(filePath, cnpj,userId);
+                    var ofxCommand = new ProcessOfxCommand(filePath, cnpj,userId, codigoBanco);
                     var ofxResult = await _processOfxUseCase.Execute(ofxCommand);
                     if (ofxResult.TransacoesPendentes != null && ofxResult.TransacoesPendentes.Any())
                     {
@@ -85,7 +86,8 @@ public class UploadController : ControllerBase
                     {
                         type = "ofx",
                         status = "completed",
-                        outputPath = ofxResult.OutputPath
+                        outputPath = ofxResult.OutputPath,
+                        transacoesClassificadas = ofxResult.TransacoesClassificadas
                     });
 
                 default:

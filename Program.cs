@@ -100,6 +100,7 @@ builder.Services.AddScoped<ProcessOfxUseCase>();
 builder.Services.AddScoped<ICodigoContaRepository, CodigoContaRepository>();
 builder.Services.AddScoped<IImpostoRepository, ImpostoRepository>();
 builder.Services.AddScoped<ITermoEspecialRepository, TermoEspecialRepository>();
+builder.Services.AddScoped<ITermoEspecialService, TermoEspecialService>();
 builder.Services.AddScoped<ICodigoContaService, CodigoContaService>();
 builder.Services.AddScoped<IImpostoService, ImpostoService>();
 

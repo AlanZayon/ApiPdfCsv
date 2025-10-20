@@ -9,5 +9,6 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Entities
         public int CodigoCredito { get; set; }
         public int? CodigoBanco { get; set; }
         public string? CNPJ { get; set; }
+        public bool TipoValor { get; set; }
     }
 }

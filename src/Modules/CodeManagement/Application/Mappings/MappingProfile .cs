@@ -4,6 +4,7 @@ using ApiPdfCsv.Modules.CodeManagement.Application.DTOs;
 using AutoMapper;
 
 namespace ApiPdfCsv.Modules.CodeManagement.Application.Mappings;
+
 public class MappingProfile : Profile
 {
     public MappingProfile()
@@ -12,5 +13,9 @@ public class MappingProfile : Profile
 
         CreateMap<Imposto, ImpostoDto>();
 
+        CreateMap<TermoEspecial, TermoEspecialDto>();
+
+        CreateMap<TermoEspecialDto, TermoEspecial>();
+    
     }
 }
