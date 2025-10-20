@@ -325,8 +325,10 @@ public class ProcessOfxUseCase
     {
         var todasTransacoes = new List<ExcelData>();
 
-        var classificacaoDict = classificacoesAtualizadas.ToDictionary(
-            c => $"{c.Descricao}|{c.Data}|{c.Valor}");
+        var classificacaoDict = classificacoesAtualizadas
+            .GroupBy(c => $"{c.Descricao}|{c.Data}|{c.Valor}")
+            .ToDictionary(g => g.Key, g => g.ToList());
+
 
         foreach (var transacao in transacoesClassificadas)
         {
@@ -336,8 +338,11 @@ public class ProcessOfxUseCase
                 var valor = transacao.Valores[i];
                 var chave = $"{transacao.Descricao}|{data}|{valor}";
 
-                if (classificacaoDict.TryGetValue(chave, out var classificacaoAtualizada))
+                if (classificacaoDict.TryGetValue(chave, out var listaClassificacoes) && listaClassificacoes.Any())
                 {
+                    var classificacaoAtualizada = listaClassificacoes.First();
+                    listaClassificacoes.RemoveAt(0);
+
                     todasTransacoes.Add(new ExcelData
                     {
                         DataDeArrecadacao = data,
@@ -406,8 +411,10 @@ public class ProcessOfxUseCase
             List<ClassificacaoTransacao> classificacoesAtualizadas,
             List<ExcelData> todasTransacoes)
     {
-        var classificacaoDict = classificacoesAtualizadas.ToDictionary(
-            c => $"{c.Descricao}|{c.Data}|{c.Valor}");
+        var classificacaoDict = classificacoesAtualizadas
+            .GroupBy(c => $"{c.Descricao}|{c.Data}|{c.Valor}")
+            .ToDictionary(g => g.Key, g => g.ToList());
+
 
         foreach (var transacaoPendente in transacoesPendentes)
         {
@@ -417,19 +424,23 @@ public class ProcessOfxUseCase
                 var valor = transacaoPendente.Valores[i];
                 var chave = $"{transacaoPendente.Descricao}|{data}|{valor}";
 
-                if (classificacaoDict.TryGetValue(chave, out var classificacaoCorrespondente))
+                if (classificacaoDict.TryGetValue(chave, out var listaClassificacoes))
                 {
+                    var classificacaoAtualizada = listaClassificacoes.First();
+                    listaClassificacoes.RemoveAt(0);
+
                     todasTransacoes.Add(new ExcelData
                     {
                         DataDeArrecadacao = data,
-                        Debito = classificacaoCorrespondente.CodigoDebito,
-                        Credito = classificacaoCorrespondente.CodigoCredito,
+                        Debito = classificacaoAtualizada.CodigoDebito,
+                        Credito = classificacaoAtualizada.CodigoCredito,
                         Total = valor,
-                        Descricao = classificacaoCorrespondente.Descricao,
+                        Descricao = classificacaoAtualizada.Descricao,
                         Divisao = 1,
-                        CodigoBanco = classificacaoCorrespondente.CodigoBanco
+                        CodigoBanco = classificacaoAtualizada.CodigoBanco
                     });
                 }
+
                 else
                 {
                     var classificacaoFallback = classificacoesAtualizadas.FirstOrDefault(
