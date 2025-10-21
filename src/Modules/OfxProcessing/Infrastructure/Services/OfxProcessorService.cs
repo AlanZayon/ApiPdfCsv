@@ -188,14 +188,31 @@ public class OfxProcessorService : IOfxProcessorService
     {
         try
         {
-            if (ofxDate.Length >= 8)
-            {
-                var year = ofxDate.Substring(0, 4);
-                var month = ofxDate.Substring(4, 2);
-                var day = ofxDate.Substring(6, 2);
+            if (string.IsNullOrWhiteSpace(ofxDate))
+                return string.Empty;
 
+            ofxDate = ofxDate.Trim();
+
+            var bracketIndex = ofxDate.IndexOf('[');
+            if (bracketIndex > 0)
+            {
+                ofxDate = ofxDate.Substring(0, bracketIndex);
+            }
+
+            if (DateTime.TryParse(ofxDate, out DateTime parsedDate))
+            {
+                return parsedDate.ToString("dd/MM/yyyy");
+            }
+
+            var numericMatch = Regex.Match(ofxDate, @"^(\d{4})(\d{2})(\d{2})");
+            if (numericMatch.Success)
+            {
+                var year = numericMatch.Groups[1].Value;
+                var month = numericMatch.Groups[2].Value;
+                var day = numericMatch.Groups[3].Value;
                 return $"{day}/{month}/{year}";
             }
+
             return ofxDate;
         }
         catch (Exception ex)
@@ -204,6 +221,7 @@ public class OfxProcessorService : IOfxProcessorService
             return ofxDate;
         }
     }
+
     private Encoding DetectEncoding(string filePath)
     {
         using var fs = File.OpenRead(filePath);

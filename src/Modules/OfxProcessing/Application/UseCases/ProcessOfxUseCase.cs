@@ -43,7 +43,6 @@ public record Transacao
     public List<int> CodigosDebito { get; set; } = new List<int>();
     public List<int> CodigosCredito { get; set; } = new List<int>();
     public string? TipoValor { get; set; }
-
 }
 
 public record ClassificacaoTransacao
@@ -90,39 +89,11 @@ public class ProcessOfxUseCase
 
     public async Task<ProcessOfxResult> Execute(ProcessOfxCommand command)
     {
-        _logger.Info($"Iniciando processamento do OFX: {command.FilePath}");
-        _logger.Info($"CNPJ informado: {command.CNPJ}");
-
-        List<int?> codigosBanco = new List<int?>();
-        if (!string.IsNullOrEmpty(command.CNPJ))
-        {
-            codigosBanco = (await _termoRepository.BuscarCodigosBancoPorCnpjAsync(
-                command.CNPJ,
-                command.UserId,
-                command.CodigoBanco)).ToList();
-
-            _logger.Info($"Códigos de banco encontrados para o CNPJ {command.CNPJ}: código(s) de banco {codigosBanco.Count}, valor recebido do CodigoBanco: '{command.CodigoBanco}'");
-
-            if (!codigosBanco.Any())
-            {
-                if (int.TryParse(command.CodigoBanco, out var codigoBancoUsuario))
-                {
-                    codigosBanco.Add(codigoBancoUsuario);
-                    _logger.Warn($"Nenhum código de banco encontrado para o CNPJ: {command.CNPJ}. Usando o código informado: {codigoBancoUsuario}");
-                }
-                else
-                {
-                    _logger.Error($"Falha ao converter CodigoBanco '{command.CodigoBanco}' para inteiro");
-                }
-            }
-
-            _logger.Info($"Encontrados {codigosBanco.Count} código(s) de banco para o CNPJ: {command.CNPJ}");
-        }
+        var codigosBanco = await ObterCodigosBanco(command);
+        var codigoBancoPadrao = codigosBanco?.FirstOrDefault();
 
         var result = await _ofxProcessor.Process(command.FilePath, command.UserId);
         var outputDir = _fileService.GetOutputDir();
-        var transacoesClassificadas = new List<Transacao>();
-        var transacoesPendentes = new List<Transacao>();
 
         if (!Directory.Exists(outputDir))
         {
@@ -131,80 +102,16 @@ public class ProcessOfxUseCase
 
         var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
 
-        var transacoesPendentesAgrupadas = new Dictionary<string, Transacao>(StringComparer.InvariantCultureIgnoreCase);
-        var transacoesClassificadasAgrupadas = new Dictionary<string, Transacao>(StringComparer.InvariantCultureIgnoreCase);
+        var termosCache = await CarregarTermosEspeciaisEmCache(
+            result.Transacoes,
+            command.UserId,
+            command.CNPJ,
+            codigoBancoPadrao);
 
-        foreach (var trans in result.Transacoes)
-        {
-            var termoEspecial = await _termoRepository.BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
-                trans.Descricao,
-                command.UserId,
-                command.CNPJ,
-                (codigosBanco ?? new List<int?>()).FirstOrDefault(),
-                trans.Valor >= 0);
-
-            if (termoEspecial != null)
-            {
-                var chaveClassificada = $"{trans.Descricao}|{(trans.Valor >= 0 ? "POSITIVO" : "NEGATIVO")}";
-
-                if (!transacoesClassificadasAgrupadas.ContainsKey(chaveClassificada))
-                {
-                    transacoesClassificadasAgrupadas[chaveClassificada] = new Transacao
-                    {
-                        Descricao = trans.Descricao,
-                        TipoValor = trans.Valor >= 0 ? "POSITIVO" : "NEGATIVO"
-                    };
-                }
-
-                var transClassificada = transacoesClassificadasAgrupadas[chaveClassificada];
-
-                transClassificada.Datas.Add(trans.DataTransacao);
-                transClassificada.Valores.Add(trans.Valor);
-
-                if (termoEspecial.CodigoDebito != 0) transClassificada.CodigosDebito.Add(termoEspecial.CodigoDebito);
-                if (termoEspecial.CodigoCredito != 0) transClassificada.CodigosCredito.Add(termoEspecial.CodigoCredito);
-                transClassificada.CodigosBanco ??= new List<int>();
-                if (termoEspecial.CodigoBanco.HasValue
-                    && !transClassificada.CodigosBanco.Contains(termoEspecial.CodigoBanco.Value))
-                {
-                    transClassificada.CodigosBanco.Add(termoEspecial.CodigoBanco.Value);
-                }
-            }
-            else
-            {
-                var chavePendente = $"{trans.Descricao}|{(trans.Valor >= 0 ? "POSITIVO" : "NEGATIVO")}";
-
-                if (!transacoesPendentesAgrupadas.ContainsKey(chavePendente))
-                {
-                    transacoesPendentesAgrupadas[chavePendente] = new Transacao
-                    {
-                        Descricao = trans.Descricao,
-                        CodigosBanco = codigosBanco?
-                            .Where(x => x.HasValue)
-                            .Select(x => x.GetValueOrDefault())
-                            .ToList() ?? new List<int>(),
-                        TipoValor = trans.Valor >= 0 ? "POSITIVO" : "NEGATIVO"
-                    };
-                }
-
-                transacoesPendentesAgrupadas[chavePendente].Datas.Add(trans.DataTransacao);
-                transacoesPendentesAgrupadas[chavePendente].Valores.Add(trans.Valor);
-                var transacao = transacoesPendentesAgrupadas[chavePendente];
-                transacao.CodigosBanco ??= new List<int>();
-
-                if (codigosBanco != null && codigosBanco.Any())
-                {
-                    foreach (var codigo in codigosBanco.Distinct())
-                    {
-                        if (codigo.HasValue && !transacao.CodigosBanco.Contains(codigo.Value))
-                            transacao.CodigosBanco.Add(codigo.Value);
-                    }
-                }
-            }
-        }
-
-        transacoesPendentes = transacoesPendentesAgrupadas.Values.ToList();
-        transacoesClassificadas = transacoesClassificadasAgrupadas.Values.ToList();
+        var (transacoesClassificadas, transacoesPendentes) = ProcessarTransacoes(
+            result.Transacoes,
+            termosCache,
+            codigosBanco ?? new List<int?>());
 
         if (transacoesPendentes.Any())
         {
@@ -223,6 +130,133 @@ public class ProcessOfxUseCase
         );
     }
 
+    private async Task<List<int?>?> ObterCodigosBanco(ProcessOfxCommand command)
+    {
+        if (string.IsNullOrEmpty(command.CNPJ))
+            return new List<int?>();
+
+        var codigosBanco = (await _termoRepository.BuscarCodigosBancoPorCnpjAsync(
+            command.CNPJ,
+            command.UserId,
+            command.CodigoBanco))?.ToList() ?? new List<int?>();
+
+        if (!codigosBanco.Any() && int.TryParse(command.CodigoBanco, out var codigoBancoUsuario))
+        {
+            codigosBanco.Add(codigoBancoUsuario);
+            _logger.Warn($"Nenhum código de banco encontrado para o CNPJ: {command.CNPJ}. Usando o código informado: {codigoBancoUsuario}");
+        }
+
+        return codigosBanco.Any() ? codigosBanco : null;
+    }
+
+    private async Task<Dictionary<string, TermoEspecial>> CarregarTermosEspeciaisEmCache(
+        IEnumerable<dynamic> transacoes,
+        string userId,
+        string cnpj,
+        int? codigoBanco)
+    {
+        var todosTermos = await _termoRepository.BuscarTodosTermosRelevantesAsync(
+            userId, cnpj, codigoBanco);
+
+        var cache = new Dictionary<string, TermoEspecial>();
+        var descricoes = transacoes.Select(t => (string)t.Descricao).Distinct();
+
+        foreach (var descricao in descricoes)
+        {
+            var descricaoLower = descricao.ToLowerInvariant();
+
+            if (todosTermos.TryGetValue((descricaoLower, true), out var positivo))
+            {
+                cache[CriarChaveCache(descricao, true)] = positivo;
+            }
+            if (todosTermos.TryGetValue((descricaoLower, false), out var negativo))
+            {
+                cache[CriarChaveCache(descricao, false)] = negativo;
+            }
+        }
+
+        return cache;
+    }
+
+    private static string CriarChaveCache(string descricao, bool isPositivo)
+        => $"{descricao}|{(isPositivo ? "POS" : "NEG")}";
+
+    private (List<Transacao>, List<Transacao>) ProcessarTransacoes(
+        IEnumerable<dynamic> transacoes,
+        Dictionary<string, TermoEspecial> termosCache,
+        List<int?> codigosBanco)
+    {
+        var transacoesPendentesAgrupadas = new Dictionary<string, Transacao>(StringComparer.InvariantCultureIgnoreCase);
+        var transacoesClassificadasAgrupadas = new Dictionary<string, Transacao>(StringComparer.InvariantCultureIgnoreCase);
+
+        foreach (var trans in transacoes)
+        {
+            var isPositivo = trans.Valor >= 0;
+            string chaveCache = CriarChaveCache((string)trans.Descricao, isPositivo);
+            termosCache.TryGetValue(chaveCache, out var termoEspecial);
+
+            var tipoValor = isPositivo ? "POSITIVO" : "NEGATIVO";
+            string chave = $"{(string)trans.Descricao}|{tipoValor}";
+
+            if (termoEspecial != null)
+            {
+                if (!transacoesClassificadasAgrupadas.TryGetValue(chave, out var transClassificada))
+                {
+                    transClassificada = new Transacao
+                    {
+                        Descricao = (string)trans.Descricao,
+                        TipoValor = tipoValor,
+                        CodigosBanco = new List<int>()
+                    };
+                    transacoesClassificadasAgrupadas[chave] = transClassificada;
+                }
+
+                transClassificada.Datas.Add((string)trans.DataTransacao);
+                transClassificada.Valores.Add((decimal)trans.Valor);
+
+                if (termoEspecial.CodigoDebito != 0)
+                    transClassificada.CodigosDebito.Add(termoEspecial.CodigoDebito);
+                if (termoEspecial.CodigoCredito != 0)
+                    transClassificada.CodigosCredito.Add(termoEspecial.CodigoCredito);
+
+                if (transClassificada.CodigosBanco == null)
+                {
+                    transClassificada.CodigosBanco = new List<int>();
+                }
+
+                if (termoEspecial.CodigoBanco.HasValue && !transClassificada.CodigosBanco.Contains(termoEspecial.CodigoBanco.Value))
+                {
+                    transClassificada.CodigosBanco.Add(termoEspecial.CodigoBanco.Value);
+                }
+            }
+            else
+            {
+                if (!transacoesPendentesAgrupadas.TryGetValue(chave, out var transPendente))
+                {
+                    var codigosBancoLista = codigosBanco?
+                        .Where(x => x.HasValue)
+                        .Select(x => x!.Value)
+                        .Distinct()
+                        .ToList() ?? new List<int>();
+
+                    transPendente = new Transacao
+                    {
+                        Descricao = (string)trans.Descricao,
+                        CodigosBanco = codigosBancoLista,
+                        TipoValor = tipoValor
+                    };
+                    transacoesPendentesAgrupadas[chave] = transPendente;
+                }
+
+                transPendente.Datas.Add((string)trans.DataTransacao);
+                transPendente.Valores.Add((decimal)trans.Valor);
+            }
+        }
+
+        return (transacoesClassificadasAgrupadas.Values.ToList(),
+                transacoesPendentesAgrupadas.Values.ToList());
+    }
+
     public async Task<ProcessOfxResultFinalizado> FinalizarProcessamento(
         List<Transacao> transacoesClassificadas,
         List<ClassificacaoTransacao> classificacoes,
@@ -230,73 +264,13 @@ public class ProcessOfxUseCase
         string userId,
         string cnpj)
     {
-        var classificacoesParaSalvar = classificacoes
-            .Where(c => !c.IsClassificacaoIndividual)
-            .ToList();
-
-        var descricoesProcessadas = new HashSet<string>();
-        foreach (var classificacao in classificacoesParaSalvar)
-        {
-            var chaveClassificacao = $"{classificacao.Descricao}|{(classificacao.Valor >= 0 ? "POSITIVO" : "NEGATIVO")}";
-            if (descricoesProcessadas.Add(chaveClassificacao))
-            {
-                var termoExistente = await _termoRepository.BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
-                    classificacao.Descricao,
-                    userId,
-                    cnpj,
-                    classificacao.CodigoBanco,
-                    classificacao.Valor >= 0);
-
-                if (termoExistente == null)
-                {
-                    var novoTermo = new TermoEspecial
-                    {
-                        Termo = classificacao.Descricao,
-                        UserId = userId,
-                        CodigoDebito = classificacao.CodigoDebito,
-                        CodigoCredito = classificacao.CodigoCredito,
-                        CNPJ = cnpj,
-                        CodigoBanco = classificacao.CodigoBanco,
-                        TipoValor = classificacao.Valor >= 0
-                    };
-
-                    await _termoRepository.AdicionarAsync(novoTermo);
-                }
-                else
-                {
-                    bool precisaAtualizar = false;
-
-                    if (termoExistente.CodigoDebito != classificacao.CodigoDebito)
-                    {
-                        termoExistente.CodigoDebito = classificacao.CodigoDebito;
-                        precisaAtualizar = true;
-                    }
-
-                    if (termoExistente.CodigoCredito != classificacao.CodigoCredito)
-                    {
-                        termoExistente.CodigoCredito = classificacao.CodigoCredito;
-                        precisaAtualizar = true;
-                    }
-
-                    if (termoExistente.CodigoBanco != classificacao.CodigoBanco)
-                    {
-                        termoExistente.CodigoBanco = classificacao.CodigoBanco;
-                        precisaAtualizar = true;
-                    }
-
-                    if (precisaAtualizar)
-                    {
-                        await _termoRepository.AtualizarAsync(termoExistente);
-                    }
-                }
-            }
-        }
+        await ProcessarESalvarClassificacoes(classificacoes, userId, cnpj);
 
         var classificacoesAtualizadas = await BuscarClassificacoesAtualizadas(
             classificacoes, userId, cnpj);
 
         var todasTransacoes = ConverterTransacoesComClassificacoesAtualizadas(
-            transacoesClassificadas, classificacoesAtualizadas, userId);
+            transacoesClassificadas, classificacoesAtualizadas);
 
         if (transacoesPendentes?.Count > 0)
         {
@@ -318,17 +292,83 @@ public class ProcessOfxUseCase
         );
     }
 
-    private List<ExcelData> ConverterTransacoesComClassificacoesAtualizadas(
-            List<Transacao> transacoesClassificadas,
-            List<ClassificacaoTransacao> classificacoesAtualizadas,
-            string userId)
+    private async Task ProcessarESalvarClassificacoes(
+        List<ClassificacaoTransacao> classificacoes,
+        string userId,
+        string cnpj)
     {
-        var todasTransacoes = new List<ExcelData>();
+        var classificacoesParaSalvar = classificacoes
+            .Where(c => !c.IsClassificacaoIndividual)
+            .ToList();
+
+        var classificacoesUnicas = classificacoesParaSalvar
+            .GroupBy(c => $"{c.Descricao}|{(c.Valor >= 0 ? "POSITIVO" : "NEGATIVO")}")
+            .Select(g => g.First())
+            .ToList();
+
+        var termosParaAdicionar = new List<TermoEspecial>();
+        var termosParaAtualizar = new List<TermoEspecial>();
+
+        foreach (var classificacao in classificacoesUnicas)
+        {
+            var termoExistente = await _termoRepository.BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
+                classificacao.Descricao,
+                userId,
+                cnpj,
+                classificacao.CodigoBanco,
+                classificacao.Valor >= 0);
+
+            if (termoExistente == null)
+            {
+                termosParaAdicionar.Add(new TermoEspecial
+                {
+                    Termo = classificacao.Descricao,
+                    UserId = userId,
+                    CodigoDebito = classificacao.CodigoDebito,
+                    CodigoCredito = classificacao.CodigoCredito,
+                    CNPJ = cnpj,
+                    CodigoBanco = classificacao.CodigoBanco,
+                    TipoValor = classificacao.Valor >= 0
+                });
+            }
+            else if (PrecisaAtualizar(termoExistente, classificacao))
+            {
+                termoExistente.CodigoDebito = classificacao.CodigoDebito;
+                termoExistente.CodigoCredito = classificacao.CodigoCredito;
+                termoExistente.CodigoBanco = classificacao.CodigoBanco;
+                termosParaAtualizar.Add(termoExistente);
+            }
+        }
+
+        var todosTermos = termosParaAdicionar.Concat(termosParaAtualizar).ToList();
+        if (todosTermos.Any())
+        {
+            await _termoRepository.AdicionarOuAtualizarEmLoteAsync(todosTermos);
+        }
+
+    }
+
+    private static bool PrecisaAtualizar(TermoEspecial termo, ClassificacaoTransacao classificacao)
+    {
+        return termo.CodigoDebito != classificacao.CodigoDebito ||
+               termo.CodigoCredito != classificacao.CodigoCredito ||
+               termo.CodigoBanco != classificacao.CodigoBanco;
+    }
+
+    private List<ExcelData> ConverterTransacoesComClassificacoesAtualizadas(
+        List<Transacao> transacoesClassificadas,
+        List<ClassificacaoTransacao> classificacoesAtualizadas)
+    {
+        var todasTransacoes = new List<ExcelData>(transacoesClassificadas.Sum(t => t.Datas.Count));
 
         var classificacaoDict = classificacoesAtualizadas
             .GroupBy(c => $"{c.Descricao}|{c.Data}|{c.Valor}")
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .ToDictionary(g => g.Key, g => new Queue<ClassificacaoTransacao>(g));
 
+        var classificacaoFallbackDict = classificacoesAtualizadas
+            .Where(c => !c.IsClassificacaoIndividual)
+            .GroupBy(c => c.Descricao.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         foreach (var transacao in transacoesClassificadas)
         {
@@ -338,67 +378,26 @@ public class ProcessOfxUseCase
                 var valor = transacao.Valores[i];
                 var chave = $"{transacao.Descricao}|{data}|{valor}";
 
-                if (classificacaoDict.TryGetValue(chave, out var listaClassificacoes) && listaClassificacoes.Any())
-                {
-                    var classificacaoAtualizada = listaClassificacoes.First();
-                    listaClassificacoes.RemoveAt(0);
+                ClassificacaoTransacao? classificacao = null;
 
-                    todasTransacoes.Add(new ExcelData
-                    {
-                        DataDeArrecadacao = data,
-                        Debito = classificacaoAtualizada.CodigoDebito,
-                        Credito = classificacaoAtualizada.CodigoCredito,
-                        Total = valor,
-                        Descricao = classificacaoAtualizada.Descricao,
-                        Divisao = 1,
-                        CodigoBanco = classificacaoAtualizada.CodigoBanco
-                    });
+                if (classificacaoDict.TryGetValue(chave, out var queue) && queue.Count > 0)
+                {
+                    classificacao = queue.Dequeue();
+                }
+                else if (classificacaoFallbackDict.TryGetValue(transacao.Descricao.ToLowerInvariant(), out var fallbacks))
+                {
+                    classificacao = fallbacks.FirstOrDefault(c =>
+                        (valor >= 0 && c.Valor >= 0) || (valor < 0 && c.Valor < 0))
+                        ?? fallbacks.FirstOrDefault();
+                }
+
+                if (classificacao != null)
+                {
+                    todasTransacoes.Add(CriarExcelData(data, valor, classificacao));
                 }
                 else
                 {
-                    var classificacaoFallback = classificacoesAtualizadas
-                        .Where(c => !c.IsClassificacaoIndividual)
-                        .FirstOrDefault(c =>
-                            string.Equals(c.Descricao, transacao.Descricao, StringComparison.InvariantCultureIgnoreCase) &&
-                            ((valor >= 0 && c.Valor >= 0) || (valor < 0 && c.Valor < 0)));
-
-                    if (classificacaoFallback == null)
-                    {
-                        classificacaoFallback = classificacoesAtualizadas
-                            .Where(c => !c.IsClassificacaoIndividual)
-                            .FirstOrDefault(c => string.Equals(c.Descricao, transacao.Descricao, StringComparison.InvariantCultureIgnoreCase));
-                    }
-
-                    if (classificacaoFallback != null)
-                    {
-                        todasTransacoes.Add(new ExcelData
-                        {
-                            DataDeArrecadacao = data,
-                            Debito = classificacaoFallback.CodigoDebito,
-                            Credito = classificacaoFallback.CodigoCredito,
-                            Total = valor,
-                            Descricao = classificacaoFallback.Descricao,
-                            Divisao = 1,
-                            CodigoBanco = classificacaoFallback.CodigoBanco
-                        });
-                    }
-                    else
-                    {
-                        todasTransacoes.Add(new ExcelData
-                        {
-                            DataDeArrecadacao = data,
-                            Debito = transacao.CodigosDebito[i],
-                            Credito = transacao.CodigosCredito[i],
-                            Total = valor,
-                            Descricao = transacao.Descricao,
-                            Divisao = 1,
-                            CodigoBanco = (transacao.CodigosBanco != null && transacao.CodigosBanco.Count > i)
-                                ? transacao.CodigosBanco[i]
-                                : (transacao.CodigosBanco != null && transacao.CodigosBanco.Count > 0
-                                    ? transacao.CodigosBanco[0]
-                                    : 0)
-                        });
-                    }
+                    todasTransacoes.Add(CriarExcelDataDaTransacao(transacao, i, data, valor));
                 }
             }
         }
@@ -407,14 +406,17 @@ public class ProcessOfxUseCase
     }
 
     private void ProcessarTransacoesPendentes(
-            List<Transacao> transacoesPendentes,
-            List<ClassificacaoTransacao> classificacoesAtualizadas,
-            List<ExcelData> todasTransacoes)
+        List<Transacao> transacoesPendentes,
+        List<ClassificacaoTransacao> classificacoesAtualizadas,
+        List<ExcelData> todasTransacoes)
     {
         var classificacaoDict = classificacoesAtualizadas
             .GroupBy(c => $"{c.Descricao}|{c.Data}|{c.Valor}")
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .ToDictionary(g => g.Key, g => new Queue<ClassificacaoTransacao>(g));
 
+        var classificacaoFallbackDict = classificacoesAtualizadas
+            .GroupBy(c => c.Descricao.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var transacaoPendente in transacoesPendentes)
         {
@@ -424,44 +426,56 @@ public class ProcessOfxUseCase
                 var valor = transacaoPendente.Valores[i];
                 var chave = $"{transacaoPendente.Descricao}|{data}|{valor}";
 
-                if (classificacaoDict.TryGetValue(chave, out var listaClassificacoes))
-                {
-                    var classificacaoAtualizada = listaClassificacoes.First();
-                    listaClassificacoes.RemoveAt(0);
+                ClassificacaoTransacao? classificacao = null;
 
-                    todasTransacoes.Add(new ExcelData
-                    {
-                        DataDeArrecadacao = data,
-                        Debito = classificacaoAtualizada.CodigoDebito,
-                        Credito = classificacaoAtualizada.CodigoCredito,
-                        Total = valor,
-                        Descricao = classificacaoAtualizada.Descricao,
-                        Divisao = 1,
-                        CodigoBanco = classificacaoAtualizada.CodigoBanco
-                    });
+                if (classificacaoDict.TryGetValue(chave, out var queue) && queue.Count > 0)
+                {
+                    classificacao = queue.Dequeue();
+                }
+                else if (classificacaoFallbackDict.TryGetValue(transacaoPendente.Descricao.ToLowerInvariant(), out var fallback))
+                {
+                    classificacao = fallback;
                 }
 
-                else
+                if (classificacao != null)
                 {
-                    var classificacaoFallback = classificacoesAtualizadas.FirstOrDefault(
-                        c => string.Equals(c.Descricao, transacaoPendente.Descricao, StringComparison.InvariantCultureIgnoreCase));
-
-                    if (classificacaoFallback != null)
-                    {
-                        todasTransacoes.Add(new ExcelData
-                        {
-                            DataDeArrecadacao = data,
-                            Debito = classificacaoFallback.CodigoDebito,
-                            Credito = classificacaoFallback.CodigoCredito,
-                            Total = valor,
-                            Descricao = classificacaoFallback.Descricao,
-                            Divisao = 1,
-                            CodigoBanco = classificacaoFallback.CodigoBanco
-                        });
-                    }
+                    todasTransacoes.Add(CriarExcelData(data, valor, classificacao));
                 }
             }
         }
+    }
+
+    private static ExcelData CriarExcelData(string data, decimal valor, ClassificacaoTransacao classificacao)
+    {
+        return new ExcelData
+        {
+            DataDeArrecadacao = data,
+            Debito = classificacao.CodigoDebito,
+            Credito = classificacao.CodigoCredito,
+            Total = valor,
+            Descricao = classificacao.Descricao,
+            Divisao = 1,
+            CodigoBanco = classificacao.CodigoBanco
+        };
+    }
+
+    private static ExcelData CriarExcelDataDaTransacao(Transacao transacao, int index, string data, decimal valor)
+    {
+        var codigosBanco = transacao.CodigosBanco ?? new List<int>();
+        var codigoBanco = (codigosBanco.Count > index)
+            ? codigosBanco[index]
+            : codigosBanco.FirstOrDefault();
+
+        return new ExcelData
+        {
+            DataDeArrecadacao = data,
+            Debito = transacao.CodigosDebito.ElementAtOrDefault(index),
+            Credito = transacao.CodigosCredito.ElementAtOrDefault(index),
+            Total = valor,
+            Descricao = transacao.Descricao,
+            Divisao = 1,
+            CodigoBanco = codigoBanco
+        };
     }
 
     private async Task<List<ClassificacaoTransacao>> BuscarClassificacoesAtualizadas(
@@ -469,16 +483,15 @@ public class ProcessOfxUseCase
         string userId,
         string cnpj)
     {
-        var classificacoesAtualizadas = new List<ClassificacaoTransacao>();
+        var classificacoesAtualizadas = new List<ClassificacaoTransacao>(classificacoesOriginais.Count);
 
-        foreach (var classificacao in classificacoesOriginais)
+        var individuais = classificacoesOriginais.Where(c => c.IsClassificacaoIndividual).ToList();
+        var naoIndividuais = classificacoesOriginais.Where(c => !c.IsClassificacaoIndividual).ToList();
+
+        classificacoesAtualizadas.AddRange(individuais);
+
+        foreach (var classificacao in naoIndividuais)
         {
-            if (classificacao.IsClassificacaoIndividual)
-            {
-                classificacoesAtualizadas.Add(classificacao);
-                continue;
-            }
-
             var termoAtualizado = await _termoRepository.BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
                 classificacao.Descricao,
                 userId,

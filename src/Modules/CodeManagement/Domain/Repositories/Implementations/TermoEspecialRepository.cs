@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using EFCore.BulkExtensions;
 using Microsoft.EntityFrameworkCore;
 using ApiPdfCsv.CrossCutting.Data;
 using ApiPdfCsv.Modules.CodeManagement.Domain.Entities;
@@ -16,6 +17,34 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Implementations
         {
             _context = context;
         }
+
+        public async Task<Dictionary<(string Termo, bool TipoValor), TermoEspecial>>
+    BuscarTodosTermosRelevantesAsync(string userId, string cnpj, int? codigoBanco)
+        {
+            var resultados = await _context.TermoEspecial
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && t.CNPJ == cnpj && t.CodigoBanco == codigoBanco)
+                .ToListAsync();
+
+            return resultados.ToDictionary(
+                t => (t.Termo.ToLowerInvariant(), t.TipoValor),
+                t => t);
+        }
+
+        public async Task AdicionarOuAtualizarEmLoteAsync(IEnumerable<TermoEspecial> termos)
+        {
+            var termosList = termos.ToList();
+            if (!termosList.Any()) return;
+
+            foreach (var termo in termosList)
+            {
+                if (string.IsNullOrWhiteSpace(termo.Id))
+                    termo.Id = Guid.NewGuid().ToString();
+            }
+
+            await _context.BulkInsertOrUpdateAsync(termosList);
+        }
+
 
         public async Task<TermoEspecial?> BuscarPorTermoEUsuarioAsync(string termo, string userId)
         {

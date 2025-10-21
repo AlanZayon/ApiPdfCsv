@@ -6,6 +6,8 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces
 {
     public interface ITermoEspecialRepository
     {
+        Task<Dictionary<(string Termo, bool TipoValor), TermoEspecial>> BuscarTodosTermosRelevantesAsync(string userId, string cnpj, int? codigoBanco);
+        Task AdicionarOuAtualizarEmLoteAsync(IEnumerable<TermoEspecial> termos);
         Task<TermoEspecial?> BuscarPorTermoEUsuarioAsync(string termo, string userId);
         Task<TermoEspecial> AdicionarAsync(TermoEspecial termo);
         Task<TermoEspecial> AtualizarAsync(TermoEspecial termo);

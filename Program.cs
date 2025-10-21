@@ -3,7 +3,8 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Serilog;
-using DotNetEnv; // 👈 Adicionado para ler o .env
+using DotNetEnv;
+using System.Text;
 
 using ApiPdfCsv.API.Controllers;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
@@ -26,12 +27,16 @@ using ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Implementations;
 using ApiPdfCsv.Modules.CodeManagement.Application.DTOs;
 using ApiPdfCsv.Modules.CodeManagement.Application.Mappings;
 
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+
 var builder = WebApplication.CreateBuilder(args);
 
-// 🔹 Carrega variáveis do arquivo .env
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+
 Env.Load();
 
-// 🔹 Configura para ler JSON + variáveis de ambiente
 builder.Configuration
     .SetBasePath(Directory.GetCurrentDirectory())
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -43,7 +48,6 @@ if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>();
 }
 
-// 🔹 Configuração do Serilog
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console()
@@ -52,13 +56,11 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-// Configuração de upload
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = 104_857_600;
 });
 
-// CORS
 var allowedOrigins = new[]
 {
     "http://localhost:5173",
@@ -83,7 +85,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddAutoMapper(typeof(MappingProfile));
 
-// Serviços
 builder.Services.AddSingleton<ApiPdfCsv.Shared.Logging.ILogger, ApiPdfCsv.Shared.Logging.Logger>();
 builder.Services.AddScoped<IPdfProcessorService, PdfProcessorService>();
 builder.Services.Configure<FileServiceOptions>(config =>
@@ -104,10 +105,8 @@ builder.Services.AddScoped<ITermoEspecialService, TermoEspecialService>();
 builder.Services.AddScoped<ICodigoContaService, CodigoContaService>();
 builder.Services.AddScoped<IImpostoService, ImpostoService>();
 
-// 🔹 Pega conexão do .env ou do appsettings
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 
-// Log apenas se connection string está configurada (sem expor valores)
 if (builder.Environment.IsDevelopment())
 {
     Console.WriteLine($"Connection String configured: {!string.IsNullOrEmpty(connStr)}");
@@ -122,8 +121,6 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 var app = builder.Build();
 
-// Migrações automáticas apenas em desenvolvimento
-// Em produção, execute migrações manualmente ou via pipeline de deploy
 if (app.Environment.IsDevelopment())
 {
     using (var scope = app.Services.CreateScope())
@@ -139,7 +136,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// HTTPS redirection deve ser sempre aplicado
 app.UseHttpsRedirection();
 
 app.UseCors("AllowedOrigins");
@@ -152,7 +148,6 @@ app.MapGet("/", () =>
     return "ok";
 });
 
-// Criar pastas se não existirem
 var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
 var uploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
