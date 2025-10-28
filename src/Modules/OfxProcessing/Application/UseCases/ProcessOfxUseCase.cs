@@ -20,13 +20,16 @@ public class ProcessOfxCommand
     public string CNPJ { get; } = string.Empty;
     public string? CodigoBanco { get; set; }
     public string UserId { get; }
+        public string UserSessionId { get; }
 
-    public ProcessOfxCommand(string filePath, string cnpj, string userId, string? codigoBanco = null)
+
+    public ProcessOfxCommand(string filePath, string cnpj, string userId, string? codigoBanco = null, string userSessionId = "")
     {
         FilePath = filePath;
         UserId = userId;
         CNPJ = cnpj;
         CodigoBanco = codigoBanco;
+        UserSessionId = userSessionId;
     }
 }
 
@@ -93,7 +96,7 @@ public class ProcessOfxUseCase
         var codigoBancoPadrao = codigosBanco?.FirstOrDefault();
 
         var result = await _ofxProcessor.Process(command.FilePath, command.UserId);
-        var outputDir = _fileService.GetOutputDir();
+        var outputDir = _fileService.GetUserOutputDir(command.UserSessionId);
 
         if (!Directory.Exists(outputDir))
         {
@@ -262,7 +265,8 @@ public class ProcessOfxUseCase
         List<ClassificacaoTransacao> classificacoes,
         List<Transacao> transacoesPendentes,
         string userId,
-        string cnpj)
+        string cnpj,
+        string userSessionId)
     {
         await ProcessarESalvarClassificacoes(classificacoes, userId, cnpj);
 
@@ -277,7 +281,7 @@ public class ProcessOfxUseCase
             ProcessarTransacoesPendentes(transacoesPendentes, classificacoesAtualizadas, todasTransacoes);
         }
 
-        var outputDir = _fileService.GetOutputDir();
+        var outputDir = _fileService.GetUserOutputDir(userSessionId);
         if (!Directory.Exists(outputDir))
         {
             Directory.CreateDirectory(outputDir);

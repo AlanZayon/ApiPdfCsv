@@ -49,6 +49,7 @@ public class UploadController : ControllerBase
         var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
         var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var userSessionId = GetUserSessionId();
 
         try
         {
@@ -62,13 +63,13 @@ public class UploadController : ControllerBase
             switch (extension)
             {
                 case ".pdf":
-                    var pdfCommand = new ProcessPdfCommand(filePath, userId);
+                    var pdfCommand = new ProcessPdfCommand(filePath, userId, userSessionId);
                     var pdfResult = await _processPdfUseCase.Execute(pdfCommand);
                     _logger.Info($"Processamento PDF concluído com sucesso: {pdfResult}");
                     return Ok(new { type = "pdf", result = pdfResult });
 
                 case ".ofx":
-                    var ofxCommand = new ProcessOfxCommand(filePath, cnpj,userId, codigoBanco);
+                    var ofxCommand = new ProcessOfxCommand(filePath, cnpj, userId, codigoBanco, userSessionId);
                     var ofxResult = await _processOfxUseCase.Execute(ofxCommand);
                     if (ofxResult.TransacoesPendentes != null && ofxResult.TransacoesPendentes.Any())
                     {
@@ -98,7 +99,6 @@ public class UploadController : ControllerBase
         catch (Exception ex)
         {
             _logger.Error($"Erro ao processar arquivo {file.FileName}: {ex.Message}", ex);
-            _fileService.ClearDirectories();
             return StatusCode(500, new { message = "Erro ao processar arquivo", error = ex.Message });
         }
         finally
@@ -114,13 +114,16 @@ public class UploadController : ControllerBase
     public async Task<IActionResult> FinalizarProcessamento([FromBody] FinalizacaoRequest request)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var userSessionId = GetUserSessionId();
+
 
         var outputPath = await _processOfxUseCase.FinalizarProcessamento(
             request.TransacoesClassificadas,
             request.Classificacoes,
             request.TransacoesPendentes,
             userId,
-            request.CNPJ
+            request.CNPJ,
+            userSessionId
         );
 
         return Ok(new
@@ -128,6 +131,23 @@ public class UploadController : ControllerBase
             status = "completed",
             outputPath
         });
+    }
+
+    private string GetUserSessionId()
+    {
+        var sessionId = Request.Headers["X-User-Session"].FirstOrDefault()
+                     ?? Request.Query["sessionId"].FirstOrDefault();
+
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
+            var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+            var guid = Guid.NewGuid().ToString("N").Substring(0, 8);
+
+            sessionId = $"{userId}_{guid}_{timestamp}";
+        }
+
+        return sessionId;
     }
 
 }

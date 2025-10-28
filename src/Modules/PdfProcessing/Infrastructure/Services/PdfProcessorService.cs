@@ -31,7 +31,6 @@ public class PdfProcessorService : IPdfProcessorService
     {
         _logger.Info($"Processing PDF file: {filePath}");
         
-        // ✅ TODO O ESTADO AGORA É LOCAL - THREAD SAFE!
         var current = InitializeCurrent();
         var descricoes = new List<string>();
         var debitos = new List<decimal>();
@@ -78,7 +77,7 @@ public class PdfProcessorService : IPdfProcessorService
                     if (line.StartsWith("Totais"))
                     {
                         collectingDescricoes = false;
-                        await ProcessarTotais(current, userId, descricoes, debitos, creditos, totais); // ✅ REMOVIDO .Wait()
+                        await ProcessarTotais(current, userId, descricoes, debitos, creditos, totais);
                     }
                     else if (Regex.IsMatch(line, @"^\d{4}(?=.*[A-Za-z]).*\d{1,3},\d{2}$"))
                     {
@@ -178,7 +177,6 @@ public class PdfProcessorService : IPdfProcessorService
 
         comprovantes.Add(new ComprovanteData(current));
         
-        // Reset do estado
         current = InitializeCurrent();
         LimparArraysTemporarios(descricoes, debitos, creditos, totais);
     }

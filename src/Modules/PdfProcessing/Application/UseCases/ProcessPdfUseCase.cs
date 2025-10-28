@@ -28,7 +28,7 @@ public class ProcessPdfUseCase
 
         var result = await _pdfProcessor.Process(command.FilePath, command.UserId);
 
-        var outputDir = _fileService.GetOutputDir();
+        var outputDir = _fileService.GetUserOutputDir(command.UserSessionId);
         
         if (!Directory.Exists(outputDir))
         {
