@@ -242,7 +242,7 @@ ApiPdfCsv/
 ## Roadmap e Versionamento
 - Versionamento Semântico (SemVer) planejado: MAJOR.MINOR.PATCH
 - Próximos itens:
-  - Paginaç��o e histórico de processamentos
+  - Paginação e histórico de processamentos
   - Exportação adicional (XLSX completo)
   - Melhoria em heurísticas de sugestão de Código Banco por CNPJ
 
