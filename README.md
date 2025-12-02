@@ -1,4 +1,4 @@
-# ApiPdfCsv — Transforme PDFs/OFX em CSV padronizado
+# ApiPdfCsv — Transforme PDFs/OFX em CSV padronizado para importar em software contábil
 
 API em .NET 8 que lê comprovantes da Receita (DARF/DAS) em PDF e extratos bancários em OFX, extrai as informações principais e gera CSV pronto para conciliação contábil. Inclui autenticação, logging, testes automatizados e um fluxo de classificação automática/assistida com aprendizado por usuário e CNPJ.
 
@@ -29,7 +29,7 @@ Cliente Web (Frontend): https://pdftoexcel.netlify.app/
 ## Para quem é e o que resolve (explicação simples)
 - Público: áreas financeira/contábil e pessoas que precisam padronizar dados de PDFs/OFX em formato CSV.
 - Problema: cada banco e documento tem um padrão distinto, dificultando a conciliação.
-- Solução: você envia o PDF/OFX, a API lê os dados (data, valor, descrição, etc.), aprende como você classifica e entrega um CSV padronizado, pronto para importar.
+- Solução: você envia o PDF/OFX, a API lê os dados (data, valor, histórico, etc.), aprende como você classifica e entrega um CSV padronizado, pronto para importar.
 
 
 ## Demonstrações (imagens e vídeos)
@@ -77,7 +77,7 @@ Opção B — Pela Documentação Interativa (Swagger)
 ## Principais funcionalidades
 - Processa PDFs de DARF/DAS e extrai dados estruturados.
 - Processa OFX (SGML) e extrai Data, Valor, Descrição, etc.
-- Classificação automática com base em "Termos Especiais" por usuário e por CNPJ.
+- Classificação automática com base em "Histórico" por usuário e por CNPJ.
 - Classificação assistida quando há descrições não mapeadas.
 - Gera CSV padronizado (PGTO.csv e PGTO_Finalizado.csv) com as regras esperadas pela contabilidade.
 - Autenticação via JWT e logging estruturado.
@@ -85,7 +85,7 @@ Opção B — Pela Documentação Interativa (Swagger)
 
 ## Entendendo o CSV gerado (explicação simples)
 - O arquivo final é um .csv com separador ;
-- Cada transação vira 2 linhas (um par) para representar débito e crédito de forma clara.
+- Cada transação vira 2 linhas (um par) para representar débito e crédito de forma clara, quando processa arquivos DAS/DARF e mantem apenas uma linha quando processa arquivos OFX.
 - Valores negativos viram positivos no CSV, mas a posição (débito/crédito) muda conforme a regra contábil.
 - O sistema usa Código Banco quando disponível para padronizar a classificação.
 
