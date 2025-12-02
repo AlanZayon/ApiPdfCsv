@@ -1,78 +1,142 @@
-# ApiPdfCsv — Processamento Profissional de PDFs e OFX
+# ApiPdfCsv — Transforme PDFs/OFX em CSV padronizado
 
-API .NET 8 para processar comprovantes da Receita Federal (DARF/DAS) em PDF e extratos bancários em OFX, extraindo dados financeiros e gerando arquivos CSV padronizados. Inclui autenticação, logging estruturado, testes automatizados e um fluxo de classificação automática/assistida para OFX com aprendizado contínuo por usuário e CNPJ.
+API em .NET 8 que lê comprovantes da Receita (DARF/DAS) em PDF e extratos bancários em OFX, extrai as informações principais e gera CSV pronto para conciliação contábil. Inclui autenticação, logging, testes automatizados e um fluxo de classificação automática/assistida com aprendizado por usuário e CNPJ.
 
-Site do cliente web: https://pdftoexcel.netlify.app/
+Cliente Web (Frontend): https://pdftoexcel.netlify.app/
 
 
 ## Sumário
-- Visão Geral
-- Arquitetura e Módulos
-- Funcionalidades
-- Requisitos
-- Configuração
-- Execução (Local e Docker)
-- Endpoints
-- CSV Gerado (Estrutura)
-- Fluxo de Processamento de OFX
-- Testes
-- Estrutura de Pastas
-- Segurança
-- Observabilidade
-- Troubleshooting
-- Roadmap e Versionamento
+- Para quem é e o que resolve (explicação simples)
+- Demonstrações (imagens e vídeos)
+- Como usar sem precisar programar (passo a passo)
+- Principais funcionalidades
+- Entendendo o CSV gerado (explicação simples)
+- Perguntas frequentes (FAQ)
+- Privacidade e segurança dos dados
+- Para pessoas técnicas
+  - Arquitetura e módulos
+  - Requisitos
+  - Configuração
+  - Execução (Local e Docker)
+  - Endpoints
+  - Estrutura do CSV (detalhada)
+  - Testes e Estrutura de Pastas
+  - Observabilidade
+  - Roadmap e Versionamento
 - Licença
 
 
-## Visão Geral
-- Objetivo: acelerar a conciliação e padronização de dados financeiros a partir de PDFs oficiais e arquivos OFX.
-- Abordagem: extração determinística, classificação por regras e termos, e geração de CSV no padrão exigido por sistemas contábeis.
-- Público: times financeiros, contabilidade e automação de rotinas fiscais.
+## Para quem é e o que resolve (explicação simples)
+- Público: áreas financeira/contábil e pessoas que precisam padronizar dados de PDFs/OFX em formato CSV.
+- Problema: cada banco e documento tem um padrão distinto, dificultando a conciliação.
+- Solução: você envia o PDF/OFX, a API lê os dados (data, valor, descrição, etc.), aprende como você classifica e entrega um CSV padronizado, pronto para importar.
 
 
-## Arquitetura e Módulos
-A solução segue separação por camadas dentro de módulos de domínio.
+## Demonstrações (imagens e vídeos)
 
-- API (Web):
+Os GIFs abaixo mostram o fluxo completo de uso da aplicação para arquivos OFX, desde o upload até a finalização e reaprendizado automático.
+
+### GIF 1 — Upload, identificação e classificação em lote por termo especial
+![Upload e classificação em lote](assets/gif-01-upload-classificacao-lote.gif)  
+Demonstra o envio de um arquivo OFX, o preenchimento do Código Banco e do CNPJ, a busca por termos recorrentes nos históricos e a classificação em massa de todas as ocorrências utilizando um único código contábil.
+
+### GIF 2 — Classificação individual e depois classificação global das pendências
+![Classificação individual e global](assets/gif-02-classificacao-individual-e-global.gif)  
+Mostra como classificar manualmente alguns históricos específicos e, em seguida, aplicar um código único para finalizar automaticamente todas as transações restantes que ainda não possuem classificação.
+
+### GIF 3 — Finalização do processamento e download do CSV gerado
+![Finalização e download do CSV](assets/gif-03-finalizacao-e-download-csv.gif)  
+Exibe o processo de finalização, o download do arquivo PGTO_Finalizado.csv e a visualização do conteúdo final, já formatado conforme o padrão esperado pela contabilidade.
+
+### GIF 4 — Reprocessamento inteligente usando aprendizado por usuário/CNPJ
+![Reprocessamento com aprendizado](assets/gif-04-reprocessamento-inteligente.gif)  
+Demonstra que as classificações anteriores foram salvas: ao reenviar o mesmo arquivo OFX com o mesmo Código Banco e CNPJ, todas as transações são automaticamente classificadas com base no histórico aprendido.
+
+### GIF 5 — Consulta e atualização das classificações salvas (sem novo upload)
+![Consulta e edição das classificações](assets/gif-05-consulta-e-edicao-de-classificacoes.gif)  
+Demonstra que o usuário pode visualizar todas as classificações já registradas para um determinado CNPJ e Código Banco sem precisar reenviar o arquivo OFX. A tela busca automaticamente todos os históricos previamente classificados e permite editar, atualizar ou corrigir códigos contábeis já existentes.
+
+---
+
+
+## Como usar sem precisar programar (passo a passo)
+Opção A — Pelo Cliente Web
+1) Acesse: https://pdftoexcel.netlify.app/
+2) Crie uma conta ou faça login.
+3) Envie um PDF (DARF/DAS) ou OFX.
+4) No caso de OFX, revise as pendências sugeridas e confirme a classificação.
+5) Baixe o CSV gerado e utilize no seu sistema.
+
+Opção B — Pela Documentação Interativa (Swagger)
+1) Suba a API localmente ou via Docker (ver seções abaixo).
+2) Acesse: http://localhost:5243/swagger
+3) Autentique-se (Auth → login → use o token nos outros endpoints).
+4) Use o endpoint de upload para enviar seus arquivos e o de download para baixar o CSV.
+
+
+## Principais funcionalidades
+- Processa PDFs de DARF/DAS e extrai dados estruturados.
+- Processa OFX (SGML) e extrai Data, Valor, Descrição, etc.
+- Classificação automática com base em "Termos Especiais" por usuário e por CNPJ.
+- Classificação assistida quando há descrições não mapeadas.
+- Gera CSV padronizado (PGTO.csv e PGTO_Finalizado.csv) com as regras esperadas pela contabilidade.
+- Autenticação via JWT e logging estruturado.
+
+
+## Entendendo o CSV gerado (explicação simples)
+- O arquivo final é um .csv com separador ;
+- Cada transação vira 2 linhas (um par) para representar débito e crédito de forma clara.
+- Valores negativos viram positivos no CSV, mas a posição (débito/crédito) muda conforme a regra contábil.
+- O sistema usa Código Banco quando disponível para padronizar a classificação.
+
+Se preferir, use o CSV parcial (PGTO.csv) para revisão e, depois de finalizar a classificação assistida, baixe o CSV final (PGTO_Finalizado.csv).
+
+
+## Perguntas frequentes (FAQ)
+- O que é OFX? É um formato de extrato bancário que muitos bancos exportam.
+- Preciso saber programar? Não. Você pode usar o cliente web ou o Swagger.
+- Posso usar com qualquer banco? Sim, desde que você consiga o OFX. A classificação aprende com seus dados.
+- E se o CSV vier vazio? Provavelmente o arquivo enviado não tem transações válidas ou foi lido com encoding incorreto.
+- Como melhorar a qualidade das classificações? Revise as pendências e confirme; esse feedback fica salvo para melhorar as próximas classificações por usuário e CNPJ.
+
+
+## Privacidade e segurança dos dados
+- Autenticação JWT. Proteja sua chave (Jwt:Key).
+- Validação de tamanho de arquivo e sanitização de nomes ao salvar.
+- Não registre dados sensíveis em logs.
+- Recomendado usar HTTPS e configurar CORS em produção.
+
+
+## Para pessoas técnicas
+
+### Arquitetura e módulos
+A solução segue organização por módulos e camadas:
+- API (Web)
   - Controllers: AuthController, UploadController, DownloadController, ConfiguracaoController
-  - Middleware e Swagger configurados no Program.cs
-- Authentication:
-  - Serviços de autenticação (JWT), envio de e-mail, DTOs de login/registro, ApplicationUser
-- PdfProcessing:
-  - Use cases para processamento de PDFs e geração de estrutura ProcessedPdfData
-  - IFileService para armazenar/ler arquivos e PdfProcessorService para parsing (iTextSharp)
-- OfxProcessing:
-  - Use case ProcessOfxUseCase, entidade ProcessedOfxData e FinalizacaoRequest
-  - OfxProcessorService para parsing de OFX (SGML)
-- CodeManagement:
-  - Entidades e serviços para gerenciar códigos (Código Conta, Impostos, Termos Especiais) e repositórios
-- CrossCutting:
-  - AppDbContext (EF Core), IdentityConfig e configurações de identidade
-- Shared:
+  - Swagger e middleware configurados no Program.cs
+- Authentication
+  - JWT, envio de e-mails e DTOs de login/registro; ApplicationUser (Identity)
+- PdfProcessing
+  - Use cases de processamento e entidade ProcessedPdfData
+  - IFileService (armazenamento) e PdfProcessorService (parsing com iTextSharp)
+- OfxProcessing
+  - ProcessOfxUseCase, ProcessedOfxData, FinalizacaoRequest
+  - OfxProcessorService para parsing de SGML
+- CodeManagement
+  - Entidades/serviços para Código Conta, Impostos, Termos Especiais e repositórios
+- CrossCutting
+  - AppDbContext (EF Core) e configurações de identidade
+- Shared
   - ExcelGenerator, resultados padronizados, logging
 
-Banco de dados: Migrations presentes em Migrations/ (EF Core). O sistema persiste usuários, termos especiais, códigos, entre outros.
+Banco de dados: migrations em Migrations/ (EF Core). Persistência de usuários, termos especiais, códigos, etc.
 
-
-## Funcionalidades
-- Processamento de PDFs (DARF/DAS) com extração estruturada
-- Processamento de OFX (SGML) com extração de Data, Valor, Descrição
-- Classificação automática por termos especiais (por usuário e CNPJ)
-- Fluxo de classificação assistida quando houver descrições não mapeadas
-- Geração de CSVs padronizados: PGTO.csv (parcial) e PGTO_Finalizado.csv (final)
-- Autenticação (Bearer JWT)
-- Logging estruturado e detalhado
-- Swagger para documentação interativa
-
-
-## Requisitos
+### Requisitos
 - .NET 8 SDK
 - Opcional: Visual Studio 2022 ou VS Code
-- Banco de dados: configurar connection string no appsettings.json (EF Core)
+- Banco de dados: ConnectionStrings:DefaultConnection no appsettings.json
 
-
-## Configuração
-Arquivo appsettings.json (exemplo mínimo):
+### Configuração (appsettings.json — exemplo mínimo)
 ```json
 {
   "ConnectionStrings": {
@@ -92,11 +156,9 @@ Arquivo appsettings.json (exemplo mínimo):
   }
 }
 ```
-Variáveis de ambiente podem sobrescrever as configurações acima.
 
-
-## Execução
-### Local
+### Execução
+Local
 1) Clonar o repositório
 ```bash
 git clone https://github.com/AlanZayon/ApiPdfCsv.git
@@ -107,7 +169,7 @@ cd ApiPdfCsv
 dotnet restore
 dotnet build -c Release
 ```
-3) Aplicar migrações (opcional, se usar features que dependem de banco)
+3) Aplicar migrações (se usar recursos que dependem de banco)
 ```bash
 dotnet ef database update
 ```
@@ -115,10 +177,9 @@ dotnet ef database update
 ```bash
 dotnet run
 ```
-Acesse Swagger: http://localhost:5243/swagger
+Swagger: http://localhost:5243/swagger
 
-### Docker
-Exemplo de build e run:
+Docker
 ```bash
 docker build -t apipdfcsv:latest .
 docker run --rm -p 5243:8080 \
@@ -129,22 +190,19 @@ docker run --rm -p 5243:8080 \
 ```
 Swagger: http://localhost:5243/swagger
 
+### Endpoints (resumo)
+Autenticação: Bearer JWT.
 
-## Endpoints
-Observação: endpoints autenticados via Bearer. O userId (NameIdentifier) personaliza os termos especiais armazenados.
-
-1) Upload de Arquivo (PDF ou OFX)
+1) Upload de Arquivo (PDF/OFX)
 - POST /api/Upload/upload
-- Headers (opcional para OFX):
-  - CNPJ: 00000000000000 (somente dígitos)
+- Headers (OFX): CNPJ: 00000000000000 (somente dígitos)
 - Body (multipart/form-data): file=@arquivo.pdf|.ofx
 - Respostas
   - PDF → 200 OK: { "type": "pdf", "result": ... }
-  - OFX pendente → 200 OK: retorna transações já classificadas e lista de pendências com sugestões
+  - OFX pendente → 200 OK: transações classificadas + pendências com sugestões
   - OFX completo → 200 OK: { "type": "ofx", "status": "completed", "outputPath": "outputs/PGTO.csv" }
-  - Erros comuns: 400 (tipo inválido), 500 (falha de processamento)
 
-Exemplo cURL (OFX):
+Exemplo cURL (OFX)
 ```bash
 curl -X POST "http://localhost:5243/api/Upload/upload" \
   -H "Authorization: Bearer <TOKEN>" \
@@ -155,61 +213,42 @@ curl -X POST "http://localhost:5243/api/Upload/upload" \
 2) Finalizar Processamento de OFX
 - POST /api/Upload/finalizar-processamento
 - Body (application/json): FinalizacaoRequest
-- Comportamento: persiste termos especiais enviados e gera outputs/PGTO_Finalizado.csv
-- Resposta de sucesso: { status: "completed", outputPath: "outputs/PGTO_Finalizado.csv" }
+- Gera: outputs/PGTO_Finalizado.csv
 
 3) Download de Arquivo
-- GET /api/Download?file=PGTO.csv ou PGTO_Finalizado.csv
-- Retorna conteúdo do diretório outputs
+- GET /api/Download?file=PGTO.csv|PGTO_Finalizado.csv
 
 4) Autenticação
-- POST /api/Auth/login
-- POST /api/Auth/register
-- POST /api/Auth/forgot-password
-- POST /api/Auth/reset-password
+- POST /api/Auth/login | /api/Auth/register | /api/Auth/forgot-password | /api/Auth/reset-password
 
-
-## CSV Gerado (Estrutura)
+### Estrutura do CSV (detalhada)
 - Separador: ;
-- Números: pt-BR, 2 casas decimais
-- Para cada transação, 2 linhas (débito e crédito):
+- Locale numérico: pt-BR, 2 casas decimais
+- Cada transação = 2 linhas (par) com valor positivo no CSV
   - Valor positivo
-    - Linha 1: Data; (CódigoBanco ou Débito); ""; Total; Descrição; "1"
-    - Linha 2: Data; ""; Crédito; Total; Descrição; ""
+    - L1: Data; (CódigoBanco ou Débito); ""; Total; Descrição; "1"
+    - L2: Data; ""; Crédito; Total; Descrição; ""
   - Valor negativo
-    - Linha 1: Data; (CódigoBanco ou Crédito); ""; |Total|; Descrição; "1"
-    - Linha 2: Data; ""; Débito; |Total|; Descrição; ""
+    - L1: Data; (CódigoBanco ou Crédito); ""; |Total|; Descrição; "1"
+    - L2: Data; ""; Débito; |Total|; Descrição; ""
 - Quando há CodigoBanco, substitui o campo de débito/crédito da segunda coluna da primeira linha do par
-- Saídas padrão: outputs/PGTO.csv (parcial) e outputs/PGTO_Finalizado.csv (final)
+- Saídas: outputs/PGTO.csv (parcial) e outputs/PGTO_Finalizado.csv (final)
 
-
-## Fluxo de Processamento de OFX
-- Leitura do OFX (SGML) com encoding ISO-8859-1
-- Extração por transação (<STMTTRN>): DTPOSTED, TRNAMT, MEMO
-- Busca de mapeamentos existentes (Termos Especiais) por usuário e CNPJ contendo: Código Débito, Crédito, Código Banco
-- Descrições não mapeadas retornam como pendentes com possíveis códigos de banco sugeridos
-
-
-## Testes
-Executar todos os testes:
+### Testes e Estrutura de Pastas
+Rodar testes
 ```bash
 cd ApiPdfCsv.Tests
 dotnet test
 ```
-- Tipos de testes: unitários (serviços), integração (controllers), funcionais e E2E
-- Recursos de teste: colocar amostras de PDFs/OFX em ApiPdfCsv.Tests/Resources
+Tipos de teste: unit, integração (controllers), funcionais e E2E. Recursos de teste em ApiPdfCsv.Tests/Resources.
 
-
-## Estrutura de Pastas (resumo)
+Estrutura (resumo)
 ```
 ApiPdfCsv/
 ├── src/
 │   ├── API/
 │   │   └── Controllers/{AuthController,UploadController,DownloadController,ConfiguracaoController}.cs
-│   ├── Modules/
-│   │   ├── PdfProcessing/
-│   │   ├── OfxProcessing/
-│   │   └── CodeManagement/
+│   ├── Modules/{PdfProcessing,OfxProcessing,CodeManagement}
 │   ├── CrossCutting/{Data,Identity}
 │   └── Shared/{Logging,Results,Utils}
 ├── Migrations/
@@ -217,37 +256,43 @@ ApiPdfCsv/
 └── ApiPdfCsv.Tests/
 ```
 
-
-## Segurança
-- Autenticação JWT; proteja a chave privada (Jwt:Key)
-- Validação de tamanho de arquivo (FileProcessing:MaxFileSizeMB)
-- Sanitização de nomes e diretórios ao salvar no FileService
-- Políticas de CORS e HTTPS recomendadas em produção
-- Não registre dados sensíveis no log; use níveis adequados
-
-
-## Observabilidade
+### Observabilidade
 - Logging estruturado (Serilog)
-- Correlação por requisição via middleware padrão ASP.NET Core
-- Recomenda-se exportar logs para sinks (Elastic, Seq) em produção
+- Correlação por requisição (ASP.NET Core)
+- Recomendado exportar para sinks (Elastic, Seq) em produção
 
-
-## Troubleshooting
-- 400 no upload: verifique extensão do arquivo (.pdf ou .ofx) e cabeçalho CNPJ quando aplicável
-- 500 no processamento: confira logs em console/files e permissões da pasta outputs
-- CSV vazio: confirme se o arquivo de entrada possui transações válidas
-- Erro de autenticação: valide emissão e validade do JWT e configuração de Issuer/Audience
-
-
-## Roadmap e Versionamento
-- Versionamento Semântico (SemVer) planejado: MAJOR.MINOR.PATCH
-- Próximos itens:
-  - Paginação e histórico de processamentos
+### Roadmap e Versionamento
+- Versão: SemVer (MAJOR.MINOR.PATCH)
+- Próximos itens
+  - Histórico de processamentos e paginação
   - Exportação adicional (XLSX completo)
-  - Melhoria em heurísticas de sugestão de Código Banco por CNPJ
+  - Heurísticas de sugestão de Código Banco por CNPJ aprimoradas
 
+## Minhas responsabilidades neste projeto
+
+- Arquitetura e implementação do backend em .NET 8
+- Parsing de PDFs e OFX
+- Classificação automática e assistida com aprendizado por usuário
+- Sistema de autenticação JWT e logging
+- Geração de CSV padronizado para conciliação contábil
+- Testes unitários, integração e E2E
+- Deploy via Docker e documentação completa
+
+## Skills Demonstradas
+
+- .NET 8, C#
+- EF Core, Identity, JWT
+- Parsing de PDFs/OFX
+- CSV padronizado e regras contábeis
+- Logging estruturado (Serilog)
+- Testes unitários, integração e E2E
+- Docker e configuração local
+- Arquitetura modular e escalável
+
+⚡ Projeto completo de backend que processa PDFs/OFX e gera CSVs padronizados, com
+classificação automática/assistida, autenticação, logging, testes e fluxo pronto para produção.
 
 ## Licença
-Distribuído sob a licença MIT. Consulte o arquivo LICENSE.
+Licença MIT (ver arquivo LICENSE).
 
-Aviso: o sistema processa documentos oficiais e dados financeiros. Utilize apenas com autorização e responsabilidade.
+Aviso: o sistema processa documentos oficiais e dados financeiros. Use somente com autorização e responsabilidade.
