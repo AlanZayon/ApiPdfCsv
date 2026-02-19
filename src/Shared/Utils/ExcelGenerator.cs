@@ -45,46 +45,53 @@ public static class ExcelGenerator
             }
             else
             {
-                if (item.Total < 0)
-                {
-                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
-                    worksheet.Cell(rowIndex, 2).Value = item.Debito;
-                    worksheet.Cell(rowIndex, 3).Value = "";
-                    worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
-                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                    worksheet.Cell(rowIndex, 6).Value = "1";
-                    rowIndex++;
+                // if (item.Total < 0)
+                // {
+                //     worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
+                //     worksheet.Cell(rowIndex, 2).Value = item.Debito;
+                //     worksheet.Cell(rowIndex, 3).Value = "";
+                //     worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+                //     worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                //     worksheet.Cell(rowIndex, 6).Value = "1";
+                //     rowIndex++;
 
-                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
-                    worksheet.Cell(rowIndex, 2).Value = "";
-                    worksheet.Cell(rowIndex, 3).Value = item.Credito;
-                    worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
-                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                    worksheet.Cell(rowIndex, 6).Value = "";
-                    rowIndex++;
-                }
-                else
-                {
-                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
-                    worksheet.Cell(rowIndex, 2).Value = item.Debito;
-                    worksheet.Cell(rowIndex, 3).Value = "";
-                    worksheet.Cell(rowIndex, 4).Value = item.Total;
-                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                    worksheet.Cell(rowIndex, 6).Value = "1";
-                    rowIndex++;
+                //     worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
+                //     worksheet.Cell(rowIndex, 2).Value = "";
+                //     worksheet.Cell(rowIndex, 3).Value = item.Credito;
+                //     worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+                //     worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                //     worksheet.Cell(rowIndex, 6).Value = "";
+                //     rowIndex++;
+                // }
+                // else
+                // {
+                //     worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
+                //     worksheet.Cell(rowIndex, 2).Value = item.Debito;
+                //     worksheet.Cell(rowIndex, 3).Value = "";
+                //     worksheet.Cell(rowIndex, 4).Value = item.Total;
+                //     worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                //     worksheet.Cell(rowIndex, 6).Value = "1";
+                //     rowIndex++;
 
-                    worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
-                    worksheet.Cell(rowIndex, 2).Value = "";
-                    worksheet.Cell(rowIndex, 3).Value = item.Credito;
-                    worksheet.Cell(rowIndex, 4).Value = item.Total;
-                    worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-                    worksheet.Cell(rowIndex, 6).Value = "";
-                    rowIndex++;
-                }
+                //     worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
+                //     worksheet.Cell(rowIndex, 2).Value = "";
+                //     worksheet.Cell(rowIndex, 3).Value = item.Credito;
+                //     worksheet.Cell(rowIndex, 4).Value = item.Total;
+                //     worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+                //     worksheet.Cell(rowIndex, 6).Value = "";
+                //     rowIndex++;
+                // }
             }
+            worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
+            worksheet.Cell(rowIndex, 2).Value = item.Debito;
+            worksheet.Cell(rowIndex, 3).Value = item.Credito;
+            worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
+            worksheet.Cell(rowIndex, 5).Value = item.Descricao;
+            worksheet.Cell(rowIndex, 6).Value = "1";
+            rowIndex++;
         }
 
-        var csvContent = ConvertToCSV(worksheet);
+        var csvContent = ConvertToFixedLayoutCsv(worksheet);
         File.WriteAllText(outputPath, csvContent, new UTF8Encoding(true));
     }
 
@@ -94,71 +101,118 @@ public static class ExcelGenerator
         {
             return data;
         }
-        
+
         if (DateTime.TryParse(dataString, CultureInfo.GetCultureInfo("pt-BR"), DateTimeStyles.None, out data))
         {
             return data;
         }
-        
+
         return DateTime.MinValue;
     }
 
-    private static string ConvertToCSV(IXLWorksheet worksheet)
+    private static string ConvertToFixedLayoutCsv(IXLWorksheet worksheet)
     {
         var rows = new List<string>();
         var lastRow = worksheet.LastRowUsed();
 
         if (lastRow == null)
-        {
             return string.Empty;
-        }
 
-        for (var row = 1; row <= lastRow.RowNumber(); row++)
+        for (int row = 1; row <= lastRow.RowNumber(); row++)
         {
-            var values = new List<string>();
-            var lastColumn = worksheet.LastColumnUsed();
+            var tipo = "1";
 
-            if (lastColumn == null)
-            {
-                continue;
-            }
+            // DATA (coluna correta)
+            if (!worksheet.Cell(row, 1).TryGetValue<DateTime>(out var dataValue))
+                continue; // ou lança erro se quiser
 
-            for (var col = 1; col <= lastColumn.ColumnNumber(); col++)
-            {
-                var cell = worksheet.Cell(row, col);
+            var data = dataValue.ToString("ddMMyyyy");
 
-                string formattedValue;
-                if (cell.DataType == XLDataType.DateTime)
-                {
-                    var date = cell.GetValue<DateTime>();
-                    formattedValue = date.ToString("dd/MM/yyyy");
-                }
-                else if (cell.DataType == XLDataType.Number)
-                {
-                    if (decimal.TryParse(cell.Value.ToString(), out var dec))
-                    {
-                        formattedValue = dec.ToString("F2", new CultureInfo("pt-BR"));
-                    }
-                    else if (double.TryParse(cell.Value.ToString(), out var d))
-                    {
-                        formattedValue = d.ToString("F2", new CultureInfo("pt-BR"));
-                    }
-                    else
-                    {
-                        formattedValue = cell.Value.ToString() ?? "";
-                    }
-                }
-                else
-                {
-                    formattedValue = cell.Value.ToString() ?? "";
-                }
+            var codigoOrigem = worksheet.Cell(row, 2).GetValue<string>();
+            var codigoDestino = worksheet.Cell(row, 3).GetValue<string>();
 
-                values.Add(formattedValue);
-            }
+            var valor = worksheet.Cell(row, 4)
+                .GetValue<decimal>()
+                .ToString("F2", CultureInfo.InvariantCulture);
 
-            rows.Add(string.Join(";", values));
+            var descricao = worksheet.Cell(row, 5)
+                .GetString()
+                .Replace("\"", "\"\"");
+
+            var csvLine = string.Format(
+                "{0},{1},{2},{3},{4},,\"{5}\"",
+                tipo,
+                data,
+                codigoOrigem,
+                codigoDestino,
+                valor,
+                descricao
+            );
+
+            rows.Add(csvLine);
         }
 
         return string.Join(Environment.NewLine, rows);
     }
+
+
+
+    // private static string ConvertToCSV(IXLWorksheet worksheet)
+    // {
+    //     var rows = new List<string>();
+    //     var lastRow = worksheet.LastRowUsed();
+
+    //     if (lastRow == null)
+    //     {
+    //         return string.Empty;
+    //     }
+
+    //     for (var row = 1; row <= lastRow.RowNumber(); row++)
+    //     {
+    //         var values = new List<string>();
+    //         var lastColumn = worksheet.LastColumnUsed();
+
+    //         if (lastColumn == null)
+    //         {
+    //             continue;
+    //         }
+
+    //         for (var col = 1; col <= lastColumn.ColumnNumber(); col++)
+    //         {
+    //             var cell = worksheet.Cell(row, col);
+
+    //             string formattedValue;
+    //             if (cell.DataType == XLDataType.DateTime)
+    //             {
+    //                 var date = cell.GetValue<DateTime>();
+    //                 formattedValue = date.ToString("dd/MM/yyyy");
+    //             }
+    //             else if (cell.DataType == XLDataType.Number)
+    //             {
+    //                 if (decimal.TryParse(cell.Value.ToString(), out var dec))
+    //                 {
+    //                     formattedValue = dec.ToString("F2", new CultureInfo("pt-BR"));
+    //                 }
+    //                 else if (double.TryParse(cell.Value.ToString(), out var d))
+    //                 {
+    //                     formattedValue = d.ToString("F2", new CultureInfo("pt-BR"));
+    //                 }
+    //                 else
+    //                 {
+    //                     formattedValue = cell.Value.ToString() ?? "";
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 formattedValue = cell.Value.ToString() ?? "";
+    //             }
+
+    //             values.Add(formattedValue);
+    //         }
+
+    //         rows.Add(string.Join(";", values));
+    //     }
+
+    //     return string.Join(Environment.NewLine, rows);
+    // }
 }
