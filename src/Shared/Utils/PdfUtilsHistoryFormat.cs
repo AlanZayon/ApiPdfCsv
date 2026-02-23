@@ -26,24 +26,26 @@ public static class PdfUtils
             "IRPJ",
             "CSLL",
             "ISS",
-            "IRRF"
+            // "IRRF"
         };
 
         var termosEspeciais = new Dictionary<string, string>
         {
             { "SIMP NAC", "SIMPLES NACIONAL" },
-            { "CONTR PREV DESCONTA SEGURADO", "INSS" },
-            { "CP", "INSS" },
-            { "CONTRIB PREVID PATRONAL", "INSS" },
-            { "CONTRIBUIÇÃO PREVID SEGURADOS", "INSS" },
-            { "CONTR PREVIDENCIÁRIA EMPREGADOR/EMPRESA", "INSS" },
-            { "CONTRIB PREV RISCO AMBIENTAL/APOSENT ESPECIAL", "INSS" },
-            { "CONTRIBUIÇÃO TERCEIROS", "INSS" },
-            { "CIDE", "INSS" },
-            { "CONTRIBUIÇÃO EMPRESA/EMPREGADOR", "INSS" },
-            { "CONTRIB TERC", "INSS" },
-            { "CONTRIB RISCO AMB/APOSENT ESPECIAL", "INSS" },
-            { "RET DE CONTRIBUICOES PAGT PJ A PJ DE DIR PRIV", "INSS" }
+            { "CONTR PREV DESCONTA SEGURADO", "Dctfweb" },
+            { "CP", "Dctfweb" },
+            { "CONTRIB PREVID PATRONAL", "Dctfweb" },
+            { "CONTRIBUIÇÃO PREVID SEGURADOS", "Dctfweb" },
+            { "CONTR PREVIDENCIÁRIA EMPREGADOR/EMPRESA", "Dctfweb" },
+            { "CONTRIB PREV RISCO AMBIENTAL/APOSENT ESPECIAL", "Dctfweb" },
+            { "CONTRIBUIÇÃO TERCEIROS", "Dctfweb" },
+            { "CIDE", "Dctfweb" },
+            { "CONTRIBUIÇÃO EMPRESA/EMPREGADOR", "Dctfweb" },
+            { "CONTRIB TERC", "Dctfweb" },
+            { "CONTRIB RISCO AMB/APOSENT ESPECIAL", "Dctfweb" },
+            { "RET DE CONTRIBUICOES PAGT PJ A PJ DE DIR PRIV", "Dctfweb" },
+            { "IRRF", "Dctfweb" }
+
         };
 
         var prioridades = new List<string>();
@@ -57,7 +59,7 @@ public static class PdfUtils
             {
                 var historico = termosEspeciais.ContainsKey(termo) ? termosEspeciais[termo] : termo;
 
-                var temParcelamento = tributosComParcelamento.Contains(termo) && 
+                var temParcelamento = tributosComParcelamento.Contains(termo) &&
                                       linhaMaiuscula.Contains("PARCELAMENTO");
 
                 if (temParcelamento)

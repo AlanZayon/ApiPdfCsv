@@ -76,92 +76,97 @@ public class ImpostoService : IImpostoService
         return await ObterTodosAsync(userId);
     }
 
-    public async Task<List<decimal>> MapearDebito(List<string> historico, string userId)
+public async Task<List<decimal>> MapearDebito(List<string> historico, string userId)
+{
+    var mapeamento = await ConstruirMapeamento(
+        userId, 
+        (imposto) => imposto.CodigoDebito?.Codigo
+    );
+
+    return historico.Select(item =>
     {
-        var impostos = await _impostoRepository.ObterTodosComCodigosAsync(userId);
+        var h = item.ToUpper();
 
-        var mapeamento = new Dictionary<string, decimal>();
-
-        foreach (var imposto in impostos)
+        foreach (var map in mapeamento)
         {
-            if (imposto?.CodigoDebito != null && !string.IsNullOrEmpty(imposto.Nome))
+            if (h.Contains(map.Key))
             {
-                var nomePadrao = imposto.Nome.ToUpper().Replace("_", " ");
-                if (decimal.TryParse(imposto.CodigoDebito.Codigo, out var codigo))
-                {
-                    mapeamento[nomePadrao] = codigo;
-
-                    if (nomePadrao.Contains("MULTA JUROS"))
-                    {
-                        mapeamento["MULTA E JUROS"] = codigo;
-                    }
-                    if (nomePadrao.Contains("MULTA"))
-                    {
-                        mapeamento["DESCONHECIDO"] = codigo;
-                    }
-                }
+                return map.Value;
             }
         }
 
-        return historico.Select(item =>
-        {
-            var h = item.ToUpper();
+        return 0m;
+    }).ToList();
+}
 
-            // Procura por  nos mapeamentos
-            foreach (var map in mapeamento)
-            {
-                if (h.Contains(map.Key))
-                {
-                    return map.Value;
-                }
-            }
+public async Task<List<decimal>> MapearCredito(List<string> historico, string userId)
+{
+    var mapeamento = await ConstruirMapeamento(
+        userId, 
+        (imposto) => imposto.CodigoCredito?.Codigo
+    );
 
-            return 0m;
-        }).ToList();
-    }
-
-    public async Task<List<decimal>> MapearCredito(List<string> historico, string userId)
+    return historico.Select(item =>
     {
-        var impostos = await _impostoRepository.ObterTodosComCodigosAsync(userId);
+        var h = item.ToUpper();
 
-        var mapeamento = new Dictionary<string, decimal>();
-
-        foreach (var imposto in impostos)
+        foreach (var map in mapeamento)
         {
-            if (imposto?.CodigoCredito != null && !string.IsNullOrEmpty(imposto.Nome))
+            if (h.Contains(map.Key))
             {
-                var nomePadrao = imposto.Nome.ToUpper().Replace("_", " ");
-                if (decimal.TryParse(imposto.CodigoCredito.Codigo, out var codigo))
-                {
-                    mapeamento[nomePadrao] = codigo;
-
-                    if (nomePadrao.Contains("MULTA JUROS"))
-                    {
-                        mapeamento["MULTA E JUROS"] = codigo;
-                    }
-                    if (nomePadrao.Contains("MULTA"))
-                    {
-                        mapeamento["DESCONHECIDO"] = codigo;
-                    }
-                }
+                return map.Value;
             }
         }
 
-        return historico.Select(item =>
-        {
-            var h = item.ToUpper();
+        return 0m;
+    }).ToList();
+}
 
-            foreach (var map in mapeamento)
+private async Task<Dictionary<string, decimal>> ConstruirMapeamento(
+    string userId, 
+    Func<Imposto, string?> obterCodigo)
+{
+    var impostos = await _impostoRepository.ObterTodosComCodigosAsync(userId);
+    var mapeamento = new Dictionary<string, decimal>();
+
+    // Mapeamentos de sinônimos
+    var sinonimos = new Dictionary<string, List<string>>
+    {
+        { "INSS", new List<string> { "INSS", "DCTFWEB" } },
+        { "IRRF", new List<string> { "IRRF", "DCTFWEB" } },
+        { "MULTA JUROS", new List<string> { "MULTA JUROS", "MULTA E JUROS" } },
+        { "MULTA", new List<string> { "MULTA", "DESCONHECIDO" } }
+    };
+
+    foreach (var imposto in impostos)
+    {
+        if (imposto == null || string.IsNullOrEmpty(imposto.Nome))
+            continue;
+
+        var codigoStr = obterCodigo(imposto);
+        if (string.IsNullOrEmpty(codigoStr) || !decimal.TryParse(codigoStr, out var codigo))
+            continue;
+
+        var nomePadrao = imposto.Nome.ToUpper().Replace("_", " ");
+        
+        // Mapeamento do nome original
+        mapeamento[nomePadrao] = codigo;
+
+        // Aplica sinônimos
+        foreach (var sinonimo in sinonimos)
+        {
+            if (nomePadrao.Contains(sinonimo.Key))
             {
-                if (h.Contains(map.Key))
+                foreach (var variacao in sinonimo.Value)
                 {
-                    return map.Value;
+                    mapeamento[variacao] = codigo;
                 }
             }
-
-            return 0m;
-        }).ToList();
+        }
     }
+
+    return mapeamento;
+}
 
 
     // public async Task<ImpostoDto> AdicionarAsync(ImpostoDto dto, string userId)
