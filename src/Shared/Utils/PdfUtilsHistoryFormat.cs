@@ -32,19 +32,19 @@ public static class PdfUtils
         var termosEspeciais = new Dictionary<string, string>
         {
             { "SIMP NAC", "SIMPLES NACIONAL" },
-            { "CONTR PREV DESCONTA SEGURADO", "Dctfweb" },
-            { "CP", "Dctfweb" },
-            { "CONTRIB PREVID PATRONAL", "Dctfweb" },
-            { "CONTRIBUIÇÃO PREVID SEGURADOS", "Dctfweb" },
-            { "CONTR PREVIDENCIÁRIA EMPREGADOR/EMPRESA", "Dctfweb" },
-            { "CONTRIB PREV RISCO AMBIENTAL/APOSENT ESPECIAL", "Dctfweb" },
-            { "CONTRIBUIÇÃO TERCEIROS", "Dctfweb" },
-            { "CIDE", "Dctfweb" },
-            { "CONTRIBUIÇÃO EMPRESA/EMPREGADOR", "Dctfweb" },
-            { "CONTRIB TERC", "Dctfweb" },
-            { "CONTRIB RISCO AMB/APOSENT ESPECIAL", "Dctfweb" },
-            { "RET DE CONTRIBUICOES PAGT PJ A PJ DE DIR PRIV", "Dctfweb" },
-            { "IRRF", "Dctfweb" }
+            { "CONTR PREV DESCONTA SEGURADO", "DCTFWEB" },
+            { "CP", "DCTFWEB" },
+            { "CONTRIB PREVID PATRONAL", "DCTFWEB" },
+            { "CONTRIBUIÇÃO PREVID SEGURADOS", "DCTFWEB" },
+            { "CONTR PREVIDENCIÁRIA EMPREGADOR/EMPRESA", "DCTFWEB" },
+            { "CONTRIB PREV RISCO AMBIENTAL/APOSENT ESPECIAL", "DCTFWEB" },
+            { "CONTRIBUIÇÃO TERCEIROS", "DCTFWEB" },
+            { "CIDE", "DCTFWEB" },
+            { "CONTRIBUIÇÃO EMPRESA/EMPREGADOR", "DCTFWEB" },
+            { "CONTRIB TERC", "DCTFWEB" },
+            { "CONTRIB RISCO AMB/APOSENT ESPECIAL", "DCTFWEB" },
+            { "RET DE CONTRIBUICOES PAGT PJ A PJ DE DIR PRIV", "DCTFWEB" },
+            { "IRRF", "DCTFWEB" }
 
         };
 
