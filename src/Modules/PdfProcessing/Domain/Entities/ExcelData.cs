@@ -9,4 +9,6 @@ public class ExcelData
     public string Descricao { get; set; } = string.Empty;
     public int Divisao { get; set; }
     public int? CodigoBanco { get; set; }
+    public string? Tipo { get; set; } // NOVO: "PDF" ou "PROLABORE"
+
 }

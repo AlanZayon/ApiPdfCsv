@@ -35,80 +35,91 @@ public class UploadController : ControllerBase
         _processOfxUseCase = processOfxUseCase;
     }
 
-    [HttpPost("upload")]
-    public async Task<IActionResult> Upload(IFormFile file)
+[HttpPost("upload")]
+public async Task<IActionResult> Upload(IFormFile file)
+{
+    if (file == null || file.Length == 0)
     {
-        if (file == null || file.Length == 0)
+        _logger.Warn("Tentativa de upload sem envio de arquivo.");
+        return BadRequest(new { message = "Arquivo não enviado." });
+    }
+
+    var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+    var filePath = Path.GetTempFileName();
+    var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
+    var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
+    
+    // NOVO: Headers do pro labore
+    var proLaboreAno = Request.Headers["ProLabore-Ano"].ToString();
+    var proLaboreValor = Request.Headers["ProLabore-Valor"].ToString();
+    
+    var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var userSessionId = GetUserSessionId();
+
+    try
+    {
+        await using (var stream = System.IO.File.Create(filePath))
         {
-            _logger.Warn("Tentativa de upload sem envio de arquivo.");
-            return BadRequest(new { message = "Arquivo não enviado." });
+            await file.CopyToAsync(stream);
         }
 
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var filePath = Path.GetTempFileName();
-        var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
-        var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var userSessionId = GetUserSessionId();
+        _logger.Info($"Arquivo recebido: {file.FileName}, extensão: {extension}");
 
-        try
+        switch (extension)
         {
-            await using (var stream = System.IO.File.Create(filePath))
-            {
-                await file.CopyToAsync(stream);
-            }
+            case ".pdf":
+                var pdfCommand = new ProcessPdfCommand(
+                    filePath, 
+                    userId, 
+                    userSessionId,
+                    proLaboreAno, // NOVO
+                    proLaboreValor // NOVO
+                );
+                var pdfResult = await _processPdfUseCase.Execute(pdfCommand);
+                _logger.Info($"Processamento PDF concluído com sucesso: {pdfResult}");
+                return Ok(new { type = "pdf", result = pdfResult });
 
-            _logger.Info($"Arquivo recebido: {file.FileName}, extensão: {extension}");
-
-            switch (extension)
-            {
-                case ".pdf":
-                    var pdfCommand = new ProcessPdfCommand(filePath, userId, userSessionId);
-                    var pdfResult = await _processPdfUseCase.Execute(pdfCommand);
-                    _logger.Info($"Processamento PDF concluído com sucesso: {pdfResult}");
-                    return Ok(new { type = "pdf", result = pdfResult });
-
-                case ".ofx":
-                    var ofxCommand = new ProcessOfxCommand(filePath, cnpj, userId, codigoBanco, userSessionId);
-                    var ofxResult = await _processOfxUseCase.Execute(ofxCommand);
-                    if (ofxResult.TransacoesPendentes != null && ofxResult.TransacoesPendentes.Any())
-                    {
-                        return Ok(new
-                        {
-                            type = "ofx",
-                            status = "pending_classification",
-                            transacoesClassificadas = ofxResult.TransacoesClassificadas,
-                            pendingTransactions = ofxResult.TransacoesPendentes,
-                            filePath
-                        });
-                    }
-
+            case ".ofx":
+                var ofxCommand = new ProcessOfxCommand(filePath, cnpj, userId, codigoBanco, userSessionId);
+                var ofxResult = await _processOfxUseCase.Execute(ofxCommand);
+                if (ofxResult.TransacoesPendentes != null && ofxResult.TransacoesPendentes.Any())
+                {
                     return Ok(new
                     {
                         type = "ofx",
-                        status = "completed",
-                        outputPath = ofxResult.OutputPath,
-                        transacoesClassificadas = ofxResult.TransacoesClassificadas
+                        status = "pending_classification",
+                        transacoesClassificadas = ofxResult.TransacoesClassificadas,
+                        pendingTransactions = ofxResult.TransacoesPendentes,
+                        filePath
                     });
+                }
 
-                default:
-                    _logger.Warn($"Extensão de arquivo não suportada: {extension}");
-                    return BadRequest(new { message = "Tipo de arquivo não suportado. Use apenas PDF ou OFX." });
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Error($"Erro ao processar arquivo {file.FileName}: {ex.Message}", ex);
-            return StatusCode(500, new { message = "Erro ao processar arquivo", error = ex.Message });
-        }
-        finally
-        {
-            if (System.IO.File.Exists(filePath))
-            {
-                System.IO.File.Delete(filePath);
-            }
+                return Ok(new
+                {
+                    type = "ofx",
+                    status = "completed",
+                    outputPath = ofxResult.OutputPath,
+                    transacoesClassificadas = ofxResult.TransacoesClassificadas
+                });
+
+            default:
+                _logger.Warn($"Extensão de arquivo não suportada: {extension}");
+                return BadRequest(new { message = "Tipo de arquivo não suportado. Use apenas PDF ou OFX." });
         }
     }
+    catch (Exception ex)
+    {
+        _logger.Error($"Erro ao processar arquivo {file.FileName}: {ex.Message}", ex);
+        return StatusCode(500, new { message = "Erro ao processar arquivo", error = ex.Message });
+    }
+    finally
+    {
+        if (System.IO.File.Exists(filePath))
+        {
+            System.IO.File.Delete(filePath);
+        }
+    }
+}
 
     [HttpPost("finalizar-processamento")]
     public async Task<IActionResult> FinalizarProcessamento([FromBody] FinalizacaoRequest request)
