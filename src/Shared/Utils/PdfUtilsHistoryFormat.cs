@@ -44,8 +44,11 @@ public static class PdfUtils
             { "CONTRIB TERC", "DCTFWEB" },
             { "CONTRIB RISCO AMB/APOSENT ESPECIAL", "DCTFWEB" },
             { "RET DE CONTRIBUICOES PAGT PJ A PJ DE DIR PRIV", "DCTFWEB" },
-            { "IRRF", "DCTFWEB" }
-
+            { "IRRF", "DCTFWEB" },
+            {"CONTRIB PREVID DESCONTADA DE SEGURADOS", "DCTFWEB"},
+            {"CONTRIB PREV DESCONTADA DE SEGURADO CONTRIBUINTE INDIVIDUAL", "DCTFWEB"},
+            {"CONTRIBUIÇÃO PREVIDENCIÁRIA EMPREGADOR/EMPRESA", "DCTFWEB"},
+            {"CONTRIB PREVID RISCO AMBIENTAL/APOSENTADORIA ESPECIAL", "DCTFWEB"},
         };
 
         var prioridades = new List<string>();
@@ -53,25 +56,42 @@ public static class PdfUtils
         prioridades.AddRange(tributosComParcelamento);
         prioridades.AddRange(termosEspeciais.Keys);
 
-        foreach (var termo in prioridades)
+        // Quando vários tributos aparecem na mesma descrição (ex.: "CSLL - ... IRPJ ..."),
+        // vale o que estiver mais à esquerda. Em empate de posição, mantém a ordem de prioridades acima.
+        string? termoVencedor = null;
+        var melhorIndice = int.MaxValue;
+        var melhorOrdemNaLista = int.MaxValue;
+
+        for (var ordem = 0; ordem < prioridades.Count; ordem++)
         {
-            if (linhaMaiuscula.Contains(termo))
+            var termo = prioridades[ordem];
+            var indice = linhaMaiuscula.IndexOf(termo, StringComparison.Ordinal);
+            if (indice < 0)
+                continue;
+
+            if (indice < melhorIndice
+                || (indice == melhorIndice && ordem < melhorOrdemNaLista))
             {
-                var historico = termosEspeciais.ContainsKey(termo) ? termosEspeciais[termo] : termo;
-
-                var temParcelamento = tributosComParcelamento.Contains(termo) &&
-                                      linhaMaiuscula.Contains("PARCELAMENTO");
-
-                if (temParcelamento)
-                {
-                    historico += " PARCELAMENTO";
-                }
-
-                return $"PG. {historico} XX";
+                melhorIndice = indice;
+                melhorOrdemNaLista = ordem;
+                termoVencedor = termo;
             }
         }
 
-        return "PG. DESCONHECIDO XX";
+        if (string.IsNullOrEmpty(termoVencedor))
+            return "PG. DESCONHECIDO XX";
+
+        var historico = termosEspeciais.ContainsKey(termoVencedor) ? termosEspeciais[termoVencedor] : termoVencedor;
+
+        var temParcelamento = tributosComParcelamento.Contains(termoVencedor) &&
+                              linhaMaiuscula.Contains("PARCELAMENTO");
+
+        if (temParcelamento)
+        {
+            historico += " PARCELAMENTO";
+        }
+
+        return $"PG. {historico} XX";
     }
 
     public static List<decimal> MapearDebito(List<string> historico)

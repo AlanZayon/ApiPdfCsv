@@ -27,7 +27,7 @@ public static class ProLaboreGenerator
                 Debito = 5, // Ou o código de débito apropriado
                 Credito = 5, // Ou o código de crédito apropriado
                 Total = valor,
-                Descricao = $"PRO LABORE {mes:00}/{ano}",
+                Descricao = $"PG. PRO LABORE XX",
                 Divisao = 1,
                 CodigoBanco = null // Ou um código específico se necessário
             });
@@ -54,7 +54,7 @@ public static class ProLaboreGenerator
                 Debito = codigoDebito,
                 Credito = codigoCredito,
                 Total = valor,
-                Descricao = $"PRO LABORE",
+                Descricao = $"PG. PRO LABORE XX",
                 Divisao = 1
             });
         }

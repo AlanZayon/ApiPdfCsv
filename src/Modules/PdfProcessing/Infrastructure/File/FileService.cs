@@ -12,6 +12,7 @@ public class FileService : IFileService
     private readonly string _baseUploadDir;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly Dictionary<string, System.Timers.Timer> _cleanupTimers;
+    private readonly object _cleanupTimersLock = new();
 
     public FileService(IOptions<FileServiceOptions> options, IHttpContextAccessor httpContextAccessor)
     {
@@ -52,10 +53,37 @@ public class FileService : IFileService
         RemoveCleanupTimer(userSessionId);
     }
 
-    public async Task ScheduleCleanup(string userSessionId, TimeSpan delay)
+    public Task ScheduleCleanup(string userSessionId, TimeSpan delay)
     {
-        await Task.Delay(delay);
-        ClearUserFiles(userSessionId);
+        lock (_cleanupTimersLock)
+        {
+            RemoveCleanupTimer(userSessionId);
+
+            var timer = new System.Timers.Timer(delay.TotalMilliseconds)
+            {
+                AutoReset = false
+            };
+
+            timer.Elapsed += (_, _) =>
+            {
+                try
+                {
+                    ClearUserFiles(userSessionId);
+                }
+                finally
+                {
+                    lock (_cleanupTimersLock)
+                    {
+                        RemoveCleanupTimer(userSessionId);
+                    }
+                }
+            };
+
+            _cleanupTimers[userSessionId] = timer;
+            timer.Start();
+        }
+
+        return Task.CompletedTask;
     }
 
     private void RemoveCleanupTimer(string userSessionId)

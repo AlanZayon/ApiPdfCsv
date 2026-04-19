@@ -57,12 +57,17 @@ public class PdfProcessorService : IPdfProcessorService
 
                 if (line.Contains("Agência Estabelecimento Valor Reservado/Restituído Referência"))
                 {
-                    ExtractDataArrecadacao(current, lines[i + 1]);
+                    if (i + 1 < lines.Count)
+                    {
+                        ExtractDataArrecadacao(current, lines[i + 1]);
+                    }
+
                     if (waitingFinish)
                     {
-                        FinalizarComprovante(current, comprovantes, userId, descricoes, debitos, creditos, totais);
+                        current = FinalizarComprovante(current, comprovantes, userId, descricoes, debitos, creditos, totais);
                         waitingFinish = false;
                     }
+
                     continue;
                 }
 
@@ -93,7 +98,7 @@ public class PdfProcessorService : IPdfProcessorService
             }
         }
 
-        FinalizarComprovante(current, comprovantes, userId, descricoes, debitos, creditos, totais);
+        current = FinalizarComprovante(current, comprovantes, userId, descricoes, debitos, creditos, totais);
         return new ProcessedPdfData(comprovantes);
     }
 
@@ -171,14 +176,14 @@ public class PdfProcessorService : IPdfProcessorService
         current.Total.Add(parsedValues.SomaMultaJuros);
     }
 
-    private static void FinalizarComprovante(ComprovanteData current, List<ComprovanteData> comprovantes, string userId, List<string> descricoes, List<decimal> debitos, List<decimal> creditos, List<decimal> totais)
+    private static ComprovanteData FinalizarComprovante(ComprovanteData current, List<ComprovanteData> comprovantes, string userId, List<string> descricoes, List<decimal> debitos, List<decimal> creditos, List<decimal> totais)
     {
-        if (string.IsNullOrEmpty(current.DataArrecadacao)) return;
+        if (string.IsNullOrEmpty(current.DataArrecadacao))
+            return current;
 
         comprovantes.Add(new ComprovanteData(current));
-        
-        current = InitializeCurrent();
         LimparArraysTemporarios(descricoes, debitos, creditos, totais);
+        return InitializeCurrent();
     }
 
     private static void LimparArraysTemporarios(List<string> descricoes, List<decimal> debitos, List<decimal> creditos, List<decimal> totais)
