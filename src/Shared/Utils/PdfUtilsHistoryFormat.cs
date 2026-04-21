@@ -56,8 +56,9 @@ public static class PdfUtils
         prioridades.AddRange(tributosComParcelamento);
         prioridades.AddRange(termosEspeciais.Keys);
 
-        // Quando vários tributos aparecem na mesma descrição (ex.: "CSLL - ... IRPJ ..."),
-        // vale o que estiver mais à esquerda. Em empate de posição, mantém a ordem de prioridades acima.
+        // Entre tributosComParcelamento na mesma descrição, vale o mais à esquerda; em empate de
+        // posição, mantém a ordem da lista. Se também houver Simples Nacional (ou "SIMP NAC"), ele
+        // vence sobre qualquer tributo desse grupo, mesmo aparecendo à direita (ex.: "IRPJ - SIMPLES NACIONAL").
         string? termoVencedor = null;
         var melhorIndice = int.MaxValue;
         var melhorOrdemNaLista = int.MaxValue;
@@ -76,6 +77,15 @@ public static class PdfUtils
                 melhorOrdemNaLista = ordem;
                 termoVencedor = termo;
             }
+        }
+
+        var linhaTemSimplesNacional = linhaMaiuscula.Contains("SIMPLES NACIONAL", StringComparison.Ordinal)
+            || linhaMaiuscula.Contains("SIMP NAC", StringComparison.Ordinal);
+        if (linhaTemSimplesNacional
+            && termoVencedor != null
+            && tributosComParcelamento.Contains(termoVencedor))
+        {
+            termoVencedor = "SIMPLES NACIONAL";
         }
 
         if (string.IsNullOrEmpty(termoVencedor))
