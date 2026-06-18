@@ -139,7 +139,7 @@ public class AuthService : IAuthService
             {
                 return Result<LoginResponse>.Failure("Credenciais inválidas", new List<ValidationError>
             {
-                new ValidationError ( "EmailNotFound", "E-mail não encontrado" )
+                new ValidationError ( "InvalidCredentials", "E-mail ou senha incorretos." )
             });
             }
 
@@ -147,12 +147,12 @@ public class AuthService : IAuthService
             {
                 return Result<LoginResponse>.Failure("Credenciais inválidas", new List<ValidationError>
             {
-                new ValidationError ( "InvalidPassword", "Senha incorreta")
+                new ValidationError ( "InvalidCredentials", "E-mail ou senha incorretos.")
             });
             }
 
             var roles = await _userManager.GetRolesAsync(user);
-            var token = _tokenService.GenerateToken(user);
+            var token = await _tokenService.GenerateTokenAsync(user);
 
             var cookieOptions = new CookieOptions
             {

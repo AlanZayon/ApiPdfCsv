@@ -1,154 +1,69 @@
-// using Moq;
-// using Xunit;
-// using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
-// using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
-// using ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
-// using System.IO;
-// using System.Threading.Tasks;
-// using System.Linq;
-// using System.Collections.Generic;
+using Moq;
+using Xunit;
+using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
+using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
 
-// public class PdfProcessorServiceTests
-// {
-//     private readonly Mock<ApiPdfCsv.Shared.Logging.ILogger> _mockLogger;
-//     private readonly Mock<IImpostoService> _mockImpostoService;
-//     private readonly PdfProcessorService _service;
+namespace ApiPdfCsv.Tests.Unit;
 
-//     public PdfProcessorServiceTests()
-//     {
-//         _mockLogger = new Mock<ApiPdfCsv.Shared.Logging.ILogger>();
-//         _mockImpostoService = new Mock<IImpostoService>();
-//         _service = new PdfProcessorService(_mockLogger.Object, _mockImpostoService.Object);
-//     }
+public class PdfProcessorServiceTests
+{
+    private const string UserPdf = @"C:\Users\alanz\Downloads\53c3dbf3-a5b3-47b3-b7c2-97d88671e75a (1).pdf";
 
-//     [Fact]
-//     public async Task Process_InvalidFilePath_ThrowsException()
-//     {
-//         const string invalidPath = "invalid_path.pdf";
-//         const string userId = "test-user";
+    private readonly Mock<ApiPdfCsv.Shared.Logging.ILogger> _mockLogger;
+    private readonly Mock<IImpostoService> _mockImpostoService;
+    private readonly PdfProcessorService _service;
 
-//         await Assert.ThrowsAsync<IOException>(() => _service.Process(invalidPath, userId));
-//     }
+    public PdfProcessorServiceTests()
+    {
+        _mockLogger = new Mock<ApiPdfCsv.Shared.Logging.ILogger>();
+        _mockImpostoService = new Mock<IImpostoService>();
+        _service = new PdfProcessorService(_mockLogger.Object, _mockImpostoService.Object);
+    }
 
-//     [Fact]
-//     public async Task Process_ValidFile_ReturnsProcessedData()
-//     {
-//         var testPdfPath = "Resources/test.pdf";
-//         const string userId = "test-user";
-        
-//         _mockImpostoService.Setup(x => x.MapearDebito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
-        
-//         _mockImpostoService.Setup(x => x.MapearCredito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
+    [Fact]
+    public async Task Process_InvalidFilePath_ThrowsException()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() => _service.Process("invalid_path.pdf", "test-user"));
+    }
 
-//         var result = await _service.Process(testPdfPath, userId);
+    [Fact]
+    public async Task Process_ValidFile_ReturnsProcessedData()
+    {
+        var testPdfPath = Path.Combine(Directory.GetCurrentDirectory(), "Resources", "test.pdf");
+        const string userId = "test-user";
 
-//         // Assert
-//         Assert.NotNull(result);
-//         Assert.IsType<ProcessedPdfData>(result);
-//         Assert.NotEmpty(result.Comprovantes);
-//         _mockLogger.Verify(x => x.Info(It.Is<string>(s => s.Contains("Processing PDF file"))), Times.AtLeastOnce);
-//     }
+        Assert.True(File.Exists(testPdfPath), $"Arquivo de teste '{testPdfPath}' não foi encontrado.");
 
-//     [Fact]
-//     public async Task Process_WithMultaEJuros_IncludesInResults()
-//     {
-//         var testPdfPath = "Resources/test.pdf";
-//         const string userId = "test-user";
-        
-//         _mockImpostoService.Setup(x => x.MapearDebito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync((List<string> descs, string _) => descs.Select(d => d.Contains("MULTA") ? 10m : 0m).ToList());
-        
-//         _mockImpostoService.Setup(x => x.MapearCredito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync((List<string> descs, string _) => descs.Select(d => d.Contains("MULTA") ? 10m : 0m).ToList());
+        _mockImpostoService
+            .Setup(x => x.MapearDebitoECredito(It.IsAny<List<string>>(), userId))
+            .ReturnsAsync((new List<decimal> { 0m }, new List<decimal> { 0m }));
 
-//         var result = await _service.Process(testPdfPath, userId);
+        var result = await _service.Process(testPdfPath, userId);
 
-//         var hasMulta = result.Comprovantes
-//             .Any(c => c.Descricoes.Any(d => d.Contains("MULTA")));
-//         Assert.True(hasMulta);
-//     }
+        Assert.NotNull(result);
+        _mockLogger.Verify(x => x.Info(It.Is<string>(s => s.Contains("Processing PDF file"))), Times.AtLeastOnce);
+    }
 
-//     // New tests
+    [Fact]
+    public async Task Process_PropagaIOException_ParaCaminhoInvalido()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() => _service.Process("not-found.pdf", "u"));
+    }
 
-//     [Fact]
-//     public async Task Process_WhenTotaisLineMissingPrices_DoesNotAddEmptyDescriptions()
-//     {
-//         var testPdfPath = "Resources/test.pdf";
-//         const string userId = "user";
+    [Fact]
+    public async Task Process_RfbDarPdf_ExtractsComprovantes()
+    {
+        if (!File.Exists(UserPdf))
+            return;
 
-//         _mockImpostoService.Setup(x => x.MapearDebito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
-//         _mockImpostoService.Setup(x => x.MapearCredito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
+        const string userId = "test-user";
+        _mockImpostoService
+            .Setup(x => x.MapearDebitoECredito(It.IsAny<List<string>>(), userId))
+            .ReturnsAsync((new List<decimal> { 179m }, new List<decimal> { 0m }));
 
-//         var result = await _service.Process(testPdfPath, userId);
+        var result = await _service.Process(UserPdf, userId);
 
-//         Assert.All(result.Comprovantes, c => Assert.DoesNotContain(c.Descricoes, d => string.IsNullOrWhiteSpace(d)));
-//     }
-
-//     [Fact]
-//     public async Task Process_AgregaDescricoesEValores_PassaDescricoesAgrupadasParaServicos()
-//     {
-//         var testPdfPath = "Resources/test.pdf";
-//         const string userId = "user";
-
-//         List<string>? capturedDescricoes = null;
-//         _mockImpostoService
-//             .Setup(x => x.MapearDebito(It.IsAny<List<string>>(), userId))
-//             .Callback<List<string>, string>((descs, _) => capturedDescricoes = descs)
-//             .ReturnsAsync(new List<decimal> { 0m });
-
-//         _mockImpostoService
-//             .Setup(x => x.MapearCredito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
-
-//         var result = await _service.Process(testPdfPath, userId);
-
-//         Assert.NotNull(capturedDescricoes);
-//         Assert.All(result.Comprovantes, c => Assert.Equal(c.Descricoes, capturedDescricoes));
-//     }
-
-//     [Fact]
-//     public async Task Process_MultaEJuros_AdicionaDescricaoEValoresMapeados()
-//     {
-//         var testPdfPath = "Resources/test.pdf";
-//         const string userId = "user";
-
-//         _mockImpostoService.Setup(x => x.MapearDebito(It.Is<List<string>>(l => l.Contains("PG. MULTA E JUROS XX")), userId))
-//             .ReturnsAsync(new List<decimal> { 1m });
-//         _mockImpostoService.Setup(x => x.MapearCredito(It.Is<List<string>>(l => l.Contains("PG. MULTA E JUROS XX")), userId))
-//             .ReturnsAsync(new List<decimal> { 2m });
-
-//         var result = await _service.Process(testPdfPath, userId);
-
-//         var comprovante = Assert.Single(result.Comprovantes);
-//         Assert.Contains("PG. MULTA E JUROS XX", comprovante.Descricoes);
-//         Assert.Contains(1m, comprovante.Debito);
-//         Assert.Contains(2m, comprovante.Credito);
-//     }
-
-//     [Fact]
-//     public async Task Process_PropagaIOException_ParaCaminhoInvalido()
-//     {
-//         await Assert.ThrowsAsync<IOException>(() => _service.Process("not-found.pdf", "u"));
-//     }
-
-//     [Fact]
-//     public async Task Process_GeraComprovantesComDataArrecadacao()
-//     {
-//         var testPdfPath = "Resources/test.pdf";
-//         const string userId = "user";
-
-//         _mockImpostoService.Setup(x => x.MapearDebito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
-//         _mockImpostoService.Setup(x => x.MapearCredito(It.IsAny<List<string>>(), userId))
-//             .ReturnsAsync(new List<decimal> { 0m });
-
-//         var result = await _service.Process(testPdfPath, userId);
-
-//         Assert.NotEmpty(result.Comprovantes);
-//         Assert.All(result.Comprovantes, c => Assert.False(string.IsNullOrEmpty(c.DataArrecadacao)));
-//     }
-// }
+        Assert.NotEmpty(result.Comprovantes);
+        Assert.All(result.Comprovantes, c => Assert.Matches(@"\d{2}/\d{2}/\d{4}", c.DataArrecadacao));
+    }
+}

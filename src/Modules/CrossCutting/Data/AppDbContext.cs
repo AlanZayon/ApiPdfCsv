@@ -15,6 +15,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<CodigoConta> CodigoConta { get; set; }
     public DbSet<Imposto> Imposto { get; set; }
     public DbSet<TermoEspecial> TermoEspecial { get; set; }
+    public DbSet<ApiPdfCsv.Shared.Processing.UploadJob> UploadJobs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -84,6 +85,30 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
            entity.Property(e => e.TipoValor)
             .HasColumnName("tipovalor");
+
+           entity.HasIndex(e => new { e.UserId, e.CNPJ, e.CodigoBanco })
+               .HasDatabaseName("IX_TermoEspecial_User_Cnpj_Banco");
+
+           entity.HasIndex(e => new { e.UserId, e.CNPJ, e.CodigoBanco, e.Termo, e.TipoValor })
+               .HasDatabaseName("IX_TermoEspecial_Lookup");
        });
+
+        builder.Entity<ApiPdfCsv.Shared.Processing.UploadJob>(entity =>
+        {
+            entity.ToTable("UploadJobs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(32);
+            entity.Property(e => e.UserId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.SessionId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.State).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.JobKind).HasMaxLength(32).IsRequired();
+            entity.Property(e => e.FileType).HasMaxLength(16);
+            entity.Property(e => e.InputFileName).HasMaxLength(256);
+            entity.Property(e => e.OutputFile).HasMaxLength(256);
+            entity.Property(e => e.Message).HasMaxLength(2000);
+            entity.Property(e => e.ResultJson).HasColumnType("jsonb");
+            entity.Property(e => e.MetadataJson).HasColumnType("jsonb");
+            entity.HasIndex(e => new { e.UserId, e.Id }).HasDatabaseName("IX_UploadJobs_User_Job");
+        });
     }
 }

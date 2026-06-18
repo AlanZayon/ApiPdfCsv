@@ -1,4 +1,3 @@
-using ClosedXML.Excel;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
 using System.Globalization;
 using System.IO;
@@ -11,46 +10,29 @@ public static class ExcelGenerator
 {
     public static void Generate(List<ExcelData> data, string outputPath, bool manterOrdemOriginal = false)
     {
+        var bytes = GenerateBytes(data, manterOrdemOriginal);
+        File.WriteAllText(outputPath, new UTF8Encoding(true).GetString(bytes), new UTF8Encoding(true));
+    }
+
+    public static byte[] GenerateBytes(List<ExcelData> data, bool manterOrdemOriginal = false)
+    {
         if (data.Count == 0)
         {
             throw new InvalidDataException("Nenhum dado para gerar o CSV");
         }
 
-        // Só ordena por data se não for para manter a ordem original
         List<ExcelData> dadosParaProcessar;
         if (manterOrdemOriginal)
         {
-            dadosParaProcessar = data; // Mantém a ordem que recebemos (PDF + Pro Labore em blocos)
+            dadosParaProcessar = data;
         }
         else
         {
             dadosParaProcessar = data.OrderBy(item => ParseData(item.DataDeArrecadacao)).ToList();
         }
 
-        using var workbook = new XLWorkbook();
-        var worksheet = workbook.Worksheets.Add("Relatório");
-
-        worksheet.Column(1).Width = 30;
-        worksheet.Column(2).Width = 30;
-        worksheet.Column(3).Width = 30;
-        worksheet.Column(4).Width = 30;
-        worksheet.Column(5).Width = 30;
-        worksheet.Column(6).Width = 30;
-
-        var rowIndex = 1;
-        foreach (var item in dadosParaProcessar)
-        {
-            worksheet.Cell(rowIndex, 1).Value = ParseData(item.DataDeArrecadacao);
-            worksheet.Cell(rowIndex, 2).Value = item.Debito;
-            worksheet.Cell(rowIndex, 3).Value = item.Credito;
-            worksheet.Cell(rowIndex, 4).Value = Math.Abs(item.Total);
-            worksheet.Cell(rowIndex, 5).Value = item.Descricao;
-            worksheet.Cell(rowIndex, 6).Value = "1";
-            rowIndex++;
-        }
-
-        var csvContent = ConvertToFixedLayoutCsv(worksheet);
-        File.WriteAllText(outputPath, csvContent, new UTF8Encoding(true));
+        var csvContent = BuildFixedLayoutCsv(dadosParaProcessar);
+        return new UTF8Encoding(true).GetBytes(csvContent);
     }
 
     private static DateTime ParseData(string dataString)
@@ -68,35 +50,24 @@ public static class ExcelGenerator
         return DateTime.MinValue;
     }
 
-    private static string ConvertToFixedLayoutCsv(IXLWorksheet worksheet)
+    private static string BuildFixedLayoutCsv(IEnumerable<ExcelData> rows)
     {
-        var rows = new List<string>();
-        var lastRow = worksheet.LastRowUsed();
+        var lines = new List<string>();
 
-        if (lastRow == null)
-            return string.Empty;
-
-        for (int row = 1; row <= lastRow.RowNumber(); row++)
+        foreach (var item in rows)
         {
-            var tipo = "1";
-
-            if (!worksheet.Cell(row, 1).TryGetValue<DateTime>(out var dataValue))
+            var dataValue = ParseData(item.DataDeArrecadacao);
+            if (dataValue == DateTime.MinValue)
                 continue;
 
+            var tipo = "1";
             var data = dataValue.ToString("ddMMyyyy");
+            var codigoOrigem = item.Debito.ToString(CultureInfo.InvariantCulture);
+            var codigoDestino = item.Credito.ToString(CultureInfo.InvariantCulture);
+            var valor = Math.Abs(item.Total).ToString("F2", CultureInfo.InvariantCulture);
+            var descricao = (item.Descricao ?? string.Empty).Replace("\"", "\"\"");
 
-            var codigoOrigem = worksheet.Cell(row, 2).GetValue<string>();
-            var codigoDestino = worksheet.Cell(row, 3).GetValue<string>();
-
-            var valor = worksheet.Cell(row, 4)
-                .GetValue<decimal>()
-                .ToString("F2", CultureInfo.InvariantCulture);
-
-            var descricao = worksheet.Cell(row, 5)
-                .GetString()
-                .Replace("\"", "\"\"");
-
-            var csvLine = string.Format(
+            lines.Add(string.Format(
                 "{0},{1},{2},{3},{4},,\"{5}\"",
                 tipo,
                 data,
@@ -104,11 +75,9 @@ public static class ExcelGenerator
                 codigoDestino,
                 valor,
                 descricao
-            );
-
-            rows.Add(csvLine);
+            ));
         }
 
-        return string.Join(Environment.NewLine, rows);
+        return string.Join(Environment.NewLine, lines);
     }
 }

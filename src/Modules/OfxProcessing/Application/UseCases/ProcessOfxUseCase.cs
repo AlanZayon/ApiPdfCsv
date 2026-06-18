@@ -3,7 +3,7 @@ using ApiPdfCsv.Modules.OfxProcessing.Domain.Interfaces;
 using ApiPdfCsv.Modules.CodeManagement.Domain.Entities;
 using ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces;
 using ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
-using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
+using ApiPdfCsv.Shared.Storage;
 using ApiPdfCsv.Shared.Logging;
 using ApiPdfCsv.Shared.Utils;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
@@ -63,30 +63,30 @@ public record ProcessOfxResult(
     string Message,
     List<Transacao> TransacoesClassificadas,
     List<Transacao>? TransacoesPendentes,
-    string? OutputPath = null
+    string? OutputFile = null
 );
 
 public record ProcessOfxResultFinalizado(
     string Message,
-    string OutputPath
+    string OutputFile
 );
 
 public class ProcessOfxUseCase
 {
     private readonly IOfxProcessorService _ofxProcessor;
     private readonly ILogger _logger;
-    private readonly IFileService _fileService;
+    private readonly IBlobStorageService _blobStorage;
     private readonly ITermoEspecialRepository _termoRepository;
 
     public ProcessOfxUseCase(
         IOfxProcessorService ofxProcessor,
         ILogger logger,
-        IFileService fileService,
+        IBlobStorageService blobStorage,
         ITermoEspecialRepository termoRepository)
     {
         _ofxProcessor = ofxProcessor;
         _logger = logger;
-        _fileService = fileService;
+        _blobStorage = blobStorage;
         _termoRepository = termoRepository;
     }
 
@@ -96,14 +96,7 @@ public class ProcessOfxUseCase
         var codigoBancoPadrao = codigosBanco?.FirstOrDefault();
 
         var result = await _ofxProcessor.Process(command.FilePath, command.UserId);
-        var outputDir = _fileService.GetUserOutputDir(command.UserSessionId);
-
-        if (!Directory.Exists(outputDir))
-        {
-            Directory.CreateDirectory(outputDir);
-        }
-
-        var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
+        const string outputFile = "EXTRATO.csv";
 
         var termosCache = await CarregarTermosEspeciaisEmCache(
             result.Transacoes,
@@ -125,11 +118,13 @@ public class ProcessOfxUseCase
             );
         }
 
+        await SaveOfxCsvAsync(transacoesClassificadas, command.UserId, command.UserSessionId);
+
         return new ProcessOfxResult(
             "Processamento OFX concluído",
             transacoesClassificadas,
             null,
-            outputPath
+            outputFile
         );
     }
 
@@ -153,7 +148,7 @@ public class ProcessOfxUseCase
     }
 
     private async Task<Dictionary<string, TermoEspecial>> CarregarTermosEspeciaisEmCache(
-        IEnumerable<dynamic> transacoes,
+        IEnumerable<OfxTransactionData> transacoes,
         string userId,
         string cnpj,
         int? codigoBanco)
@@ -162,7 +157,7 @@ public class ProcessOfxUseCase
             userId, cnpj, codigoBanco);
 
         var cache = new Dictionary<string, TermoEspecial>();
-        var descricoes = transacoes.Select(t => (string)t.Descricao).Distinct();
+        var descricoes = transacoes.Select(t => t.Descricao).Distinct();
 
         foreach (var descricao in descricoes)
         {
@@ -185,7 +180,7 @@ public class ProcessOfxUseCase
         => $"{descricao}|{(isPositivo ? "POS" : "NEG")}";
 
     private (List<Transacao>, List<Transacao>) ProcessarTransacoes(
-        IEnumerable<dynamic> transacoes,
+        IEnumerable<OfxTransactionData> transacoes,
         Dictionary<string, TermoEspecial> termosCache,
         List<int?> codigosBanco)
     {
@@ -195,11 +190,11 @@ public class ProcessOfxUseCase
         foreach (var trans in transacoes)
         {
             var isPositivo = trans.Valor >= 0;
-            string chaveCache = CriarChaveCache((string)trans.Descricao, isPositivo);
+            string chaveCache = CriarChaveCache(trans.Descricao, isPositivo);
             termosCache.TryGetValue(chaveCache, out var termoEspecial);
 
             var tipoValor = isPositivo ? "POSITIVO" : "NEGATIVO";
-            string chave = $"{(string)trans.Descricao}|{tipoValor}";
+            string chave = $"{trans.Descricao}|{tipoValor}";
 
             if (termoEspecial != null)
             {
@@ -207,15 +202,15 @@ public class ProcessOfxUseCase
                 {
                     transClassificada = new Transacao
                     {
-                        Descricao = (string)trans.Descricao,
+                        Descricao = trans.Descricao,
                         TipoValor = tipoValor,
                         CodigosBanco = new List<int>()
                     };
                     transacoesClassificadasAgrupadas[chave] = transClassificada;
                 }
 
-                transClassificada.Datas.Add((string)trans.DataTransacao);
-                transClassificada.Valores.Add((decimal)trans.Valor);
+                transClassificada.Datas.Add(trans.DataTransacao);
+                transClassificada.Valores.Add(trans.Valor);
 
                 if (termoEspecial.CodigoDebito != 0)
                     transClassificada.CodigosDebito.Add(termoEspecial.CodigoDebito);
@@ -244,15 +239,15 @@ public class ProcessOfxUseCase
 
                     transPendente = new Transacao
                     {
-                        Descricao = (string)trans.Descricao,
+                        Descricao = trans.Descricao,
                         CodigosBanco = codigosBancoLista,
                         TipoValor = tipoValor
                     };
                     transacoesPendentesAgrupadas[chave] = transPendente;
                 }
 
-                transPendente.Datas.Add((string)trans.DataTransacao);
-                transPendente.Valores.Add((decimal)trans.Valor);
+                transPendente.Datas.Add(trans.DataTransacao);
+                transPendente.Valores.Add(trans.Valor);
             }
         }
 
@@ -281,19 +276,43 @@ public class ProcessOfxUseCase
             ProcessarTransacoesPendentes(transacoesPendentes, classificacoesAtualizadas, todasTransacoes);
         }
 
-        var outputDir = _fileService.GetUserOutputDir(userSessionId);
-        if (!Directory.Exists(outputDir))
-        {
-            Directory.CreateDirectory(outputDir);
-        }
-        var outputPath = Path.Combine(outputDir, "EXTRATO.csv");
-
-        ExcelGenerator.Generate(todasTransacoes, outputPath);
+        await SaveOfxCsvFromExcelDataAsync(todasTransacoes, userId, userSessionId);
 
         return new ProcessOfxResultFinalizado(
             "Processamento finalizado com sucesso",
-            outputPath
+            "EXTRATO.csv"
         );
+    }
+
+    private async Task SaveOfxCsvAsync(List<Transacao> transacoesClassificadas, string userId, string sessionId)
+    {
+        var excelData = ConverterTransacoesClassificadasParaExcel(transacoesClassificadas);
+        await SaveOfxCsvFromExcelDataAsync(excelData, userId, sessionId);
+    }
+
+    private async Task SaveOfxCsvFromExcelDataAsync(List<ExcelData> excelData, string userId, string sessionId)
+    {
+        var bytes = ExcelGenerator.GenerateBytes(excelData);
+        await _blobStorage.SaveAsync(userId, sessionId, "EXTRATO.csv", new MemoryStream(bytes));
+    }
+
+    private static List<ExcelData> ConverterTransacoesClassificadasParaExcel(List<Transacao> transacoesClassificadas)
+    {
+        var todasTransacoes = new List<ExcelData>(transacoesClassificadas.Sum(t => t.Datas.Count));
+
+        foreach (var transacao in transacoesClassificadas)
+        {
+            for (int i = 0; i < transacao.Datas.Count; i++)
+            {
+                todasTransacoes.Add(CriarExcelDataDaTransacao(
+                    transacao,
+                    i,
+                    transacao.Datas[i],
+                    transacao.Valores[i]));
+            }
+        }
+
+        return todasTransacoes;
     }
 
     private async Task ProcessarESalvarClassificacoes(
@@ -313,14 +332,12 @@ public class ProcessOfxUseCase
         var termosParaAdicionar = new List<TermoEspecial>();
         var termosParaAtualizar = new List<TermoEspecial>();
 
+        var termosExistentes = await _termoRepository.BuscarTodosPorUsuarioCnpjAsync(userId, cnpj);
+
         foreach (var classificacao in classificacoesUnicas)
         {
-            var termoExistente = await _termoRepository.BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
-                classificacao.Descricao,
-                userId,
-                cnpj,
-                classificacao.CodigoBanco,
-                classificacao.Valor >= 0);
+            var chave = (classificacao.Descricao, (int?)classificacao.CodigoBanco, classificacao.Valor >= 0);
+            termosExistentes.TryGetValue(chave, out var termoExistente);
 
             if (termoExistente == null)
             {
@@ -494,14 +511,15 @@ public class ProcessOfxUseCase
 
         classificacoesAtualizadas.AddRange(individuais);
 
+        if (naoIndividuais.Count == 0)
+            return classificacoesAtualizadas;
+
+        var termosExistentes = await _termoRepository.BuscarTodosPorUsuarioCnpjAsync(userId, cnpj);
+
         foreach (var classificacao in naoIndividuais)
         {
-            var termoAtualizado = await _termoRepository.BuscarPorTermoUsuarioCnpjEBancoETipoAsync(
-                classificacao.Descricao,
-                userId,
-                cnpj,
-                classificacao.CodigoBanco,
-                classificacao.Valor >= 0);
+            var chave = (classificacao.Descricao, (int?)classificacao.CodigoBanco, classificacao.Valor >= 0);
+            termosExistentes.TryGetValue(chave, out var termoAtualizado);
 
             if (termoAtualizado != null)
             {

@@ -1,24 +1,33 @@
-name: Build and Test
+name: CI/CD
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: ubuntu-latest
-    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fiscal2csv_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-    - uses: actions/checkout@v2
-    
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: '8.0.x'
-        
-    - name: Restore dependencies
-      run: dotnet restore
-      
-    - name: Run tests
-      run: dotnet test --collect:"XPlat Code Coverage"
-      
-    - name: Upload coverage
-      uses: codecov/codecov-action@v1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore ApiPdfCsv.sln
+      - run: dotnet build ApiPdfCsv.sln --no-restore -c Release
+      - run: dotnet test ApiPdfCsv.Tests/ApiPdfCsv.Tests.csproj --no-build -c Release --verbosity normal --collect:"XPlat Code Coverage"

@@ -10,25 +10,45 @@ public class FileService : IFileService
 {
     private readonly string _baseOutputDir;
     private readonly string _baseUploadDir;
-    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly Dictionary<string, System.Timers.Timer> _cleanupTimers;
     private readonly object _cleanupTimersLock = new();
 
-    public FileService(IOptions<FileServiceOptions> options, IHttpContextAccessor httpContextAccessor)
+    public FileService(IOptions<FileServiceOptions> options)
     {
         _baseOutputDir = options.Value.OutputDir;
         _baseUploadDir = options.Value.UploadDir;
-        _httpContextAccessor = httpContextAccessor;
         _cleanupTimers = new Dictionary<string, System.Timers.Timer>();
 
         EnsureDirectoryExists(_baseOutputDir);
         EnsureDirectoryExists(_baseUploadDir);
     }
 
-    public string GetUserFile(string userSessionId)
+    public string GetUserFile(string userId, string userSessionId, string? fileName = null)
     {
-        var userOutputDir = GetUserOutputDir(userSessionId);
+        var userOutputDir = GetUserOutputDir(userId, userSessionId);
         EnsureDirectoryExists(userOutputDir);
+
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            var safeFileName = Path.GetFileName(fileName);
+            var requestedPath = Path.Combine(userOutputDir, safeFileName);
+            if (!System.IO.File.Exists(requestedPath))
+            {
+                throw new FileNotFoundException($"File not found: {safeFileName}");
+            }
+
+            return requestedPath;
+        }
+
+        var preferredFiles = new[] { "EXTRATO.csv", "PGTO.csv" };
+        foreach (var preferred in preferredFiles)
+        {
+            var preferredPath = Path.Combine(userOutputDir, preferred);
+            if (System.IO.File.Exists(preferredPath))
+            {
+                return preferredPath;
+            }
+        }
 
         var files = Directory.GetFiles(userOutputDir);
         if (files.Length == 0)
@@ -36,28 +56,32 @@ public class FileService : IFileService
             throw new FileNotFoundException("No files available for download");
         }
 
-        return files[0];
+        return files.OrderByDescending(System.IO.File.GetLastWriteTimeUtc).First();
     }
 
-    public void ClearUserFiles(string userSessionId)
+    public void ClearUserFiles(string userId, string userSessionId)
     {
-        var userOutputDir = GetUserOutputDir(userSessionId);
-        var userUploadDir = GetUserUploadDir(userSessionId);
+        var userOutputDir = GetUserOutputDir(userId, userSessionId);
+        var userUploadDir = GetUserUploadDir(userId, userSessionId);
+        var timerKey = BuildTimerKey(userId, userSessionId);
 
         ClearDirectory(userOutputDir);
         ClearDirectory(userUploadDir);
 
         TryRemoveDirectory(userOutputDir);
         TryRemoveDirectory(userUploadDir);
+        TryRemoveEmptyUserDirectory(userId);
 
-        RemoveCleanupTimer(userSessionId);
+        RemoveCleanupTimer(timerKey);
     }
 
-    public Task ScheduleCleanup(string userSessionId, TimeSpan delay)
+    public Task ScheduleCleanup(string userId, string userSessionId, TimeSpan delay)
     {
+        var timerKey = BuildTimerKey(userId, userSessionId);
+
         lock (_cleanupTimersLock)
         {
-            RemoveCleanupTimer(userSessionId);
+            RemoveCleanupTimer(timerKey);
 
             var timer = new System.Timers.Timer(delay.TotalMilliseconds)
             {
@@ -68,37 +92,37 @@ public class FileService : IFileService
             {
                 try
                 {
-                    ClearUserFiles(userSessionId);
+                    ClearUserFiles(userId, userSessionId);
                 }
                 finally
                 {
                     lock (_cleanupTimersLock)
                     {
-                        RemoveCleanupTimer(userSessionId);
+                        RemoveCleanupTimer(timerKey);
                     }
                 }
             };
 
-            _cleanupTimers[userSessionId] = timer;
+            _cleanupTimers[timerKey] = timer;
             timer.Start();
         }
 
         return Task.CompletedTask;
     }
 
-    private void RemoveCleanupTimer(string userSessionId)
+    private void RemoveCleanupTimer(string timerKey)
     {
-        if (_cleanupTimers.TryGetValue(userSessionId, out var timer))
+        if (_cleanupTimers.TryGetValue(timerKey, out var timer))
         {
             timer.Stop();
             timer.Dispose();
-            _cleanupTimers.Remove(userSessionId);
+            _cleanupTimers.Remove(timerKey);
         }
     }
 
-    public string SaveUserFile(IFormFile file, string userSessionId)
+    public string SaveUserFile(IFormFile file, string userId, string userSessionId)
     {
-        var userUploadDir = GetUserUploadDir(userSessionId);
+        var userUploadDir = GetUserUploadDir(userId, userSessionId);
         EnsureDirectoryExists(userUploadDir);
 
         ClearDirectory(userUploadDir);
@@ -114,65 +138,36 @@ public class FileService : IFileService
         return filePath;
     }
 
-    public string GetUserOutputDir(string userSessionId)
+    public string GetUserOutputDir(string userId, string userSessionId)
+        => BuildScopedPath(_baseOutputDir, userId, userSessionId);
+
+    public string GetUserUploadDir(string userId, string userSessionId)
+        => BuildScopedPath(_baseUploadDir, userId, userSessionId);
+
+    private static string BuildScopedPath(string baseDir, string userId, string userSessionId)
     {
-        return Path.Combine(_baseOutputDir, userSessionId);
+        var safeUserId = SanitizePathSegment(userId);
+        var safeSessionId = SanitizePathSegment(userSessionId);
+        return Path.Combine(baseDir, safeUserId, safeSessionId);
     }
 
-    public string GetUserUploadDir(string userSessionId)
+    private static string SanitizePathSegment(string value)
     {
-        return Path.Combine(_baseUploadDir, userSessionId);
-    }
+        var sanitized = value.Replace("..", string.Empty)
+            .Replace("/", string.Empty)
+            .Replace("\\", string.Empty)
+            .Trim();
 
-    public List<string> GetUserSessions(string userId)
-    {
-        var userSessions = new List<string>();
-
-        if (Directory.Exists(_baseOutputDir))
+        if (string.IsNullOrWhiteSpace(sanitized))
         {
-            var allOutputDirs = Directory.GetDirectories(_baseOutputDir);
-            foreach (var dir in allOutputDirs)
-            {
-                var dirName = Path.GetFileName(dir);
-                if (dirName.StartsWith(userId + "_"))
-                {
-                    userSessions.Add(dirName);
-                }
-            }
+            throw new InvalidDataException("Identificador inválido.");
         }
 
-        return userSessions;
+        return sanitized;
     }
 
-    public void CleanupOldSessions(string userId)
-    {
-        var userSessions = GetUserSessions(userId);
-        var now = DateTime.Now;
-
-        foreach (var session in userSessions)
-        {
-            try
-            {
-                var parts = session.Split('_');
-                if (parts.Length >= 3 && DateTime.TryParseExact(parts[2], "yyyyMMddHHmmss", null, System.Globalization.DateTimeStyles.None, out var sessionTime))
-                {
-                    if ((now - sessionTime).TotalHours > 1)
-                    {
-                        var outputDir = Path.Combine(_baseOutputDir, session);
-                        var uploadDir = Path.Combine(_baseUploadDir, session);
-
-                        ClearDirectory(outputDir);
-                        ClearDirectory(uploadDir);
-                        TryRemoveDirectory(outputDir);
-                        TryRemoveDirectory(uploadDir);
-                    }
-                }
-            }
-            catch
-            {
-            }
-        }
-    }
+    private static string BuildTimerKey(string userId, string userSessionId)
+        => $"{userId}::{userSessionId}";
 
     private void EnsureDirectoryExists(string path)
     {
@@ -182,7 +177,7 @@ public class FileService : IFileService
         }
     }
 
-    private void ClearDirectory(string directoryPath)
+    private static void ClearDirectory(string directoryPath)
     {
         if (!Directory.Exists(directoryPath)) return;
 
@@ -207,6 +202,22 @@ public class FileService : IFileService
                 !Directory.GetDirectories(directoryPath).Any())
             {
                 Directory.Delete(directoryPath);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private void TryRemoveEmptyUserDirectory(string userId)
+    {
+        try
+        {
+            var userDir = Path.Combine(_baseOutputDir, SanitizePathSegment(userId));
+            if (Directory.Exists(userDir) &&
+                !Directory.GetFiles(userDir, "*", SearchOption.AllDirectories).Any())
+            {
+                Directory.Delete(userDir, recursive: true);
             }
         }
         catch

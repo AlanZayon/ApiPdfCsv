@@ -1,6 +1,7 @@
 // Modules/Authentication/API/Controllers/AuthController.cs
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using ApiPdfCsv.Modules.Authentication.Application.DTOs.Auth;
 using ApiPdfCsv.Modules.Authentication.Application.DTOs.User;
@@ -20,6 +21,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Register(RegisterRequest request)
     {
         var result = await _authService.Register(request);
@@ -48,6 +50,7 @@ public class AuthController : ControllerBase
         });
     }
     [HttpPost("login")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login(LoginRequest request)
     {
         var result = await _authService.Login(request);
@@ -131,6 +134,7 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
     [HttpPost("forgot-password")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
         var result = await _authService.ForgotPassword(request);
@@ -164,6 +168,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
     {
         var result = await _authService.ResetPassword(request);

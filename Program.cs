@@ -1,34 +1,19 @@
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
 using DotNetEnv;
 using System.Text;
-
-using ApiPdfCsv.API.Controllers;
-using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
-using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
-using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
-using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Options;
-using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
-using ApiPdfCsv.Modules.OfxProcessing.Domain.Interfaces;
-using ApiPdfCsv.Modules.OfxProcessing.Infrastructure.Services;
-using ApiPdfCsv.Modules.OfxProcessing.Application.UseCases;
-using ApiPdfCsv.Shared.Logging;
+using System.Threading.RateLimiting;
 using ApiPdfCsv.CrossCutting.Data;
 using ApiPdfCsv.CrossCutting.Identity.Configurations;
-using ApiPdfCsv.Modules.Authentication.Infrastructure.Services;
-using ApiPdfCsv.Modules.Authentication.Application.Services;
-using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
-using ApiPdfCsv.Modules.CodeManagement.Application.Services;
-using ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces;
-using ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Implementations;
-using ApiPdfCsv.Modules.CodeManagement.Application.DTOs;
-using ApiPdfCsv.Modules.CodeManagement.Application.Mappings;
+using ApiPdfCsv.Shared.Extensions;
+using ApiPdfCsv.Shared.Middleware;
+using ApiPdfCsv.Shared.Storage;
+using Hangfire;
+using Hangfire.PostgreSql;
 
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,13 +46,15 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 104_857_600;
 });
 
-var allowedOrigins = new[]
-{
-    "http://localhost:5173",
-    "https://front-pdf-to-excel.vercel.app",
-    "https://admin.meusite.com",
-    "https://pdftoexcel.netlify.app",
-};
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? new[]
+    {
+        "http://localhost:5173",
+        "https://front-pdf-to-excel.vercel.app",
+        "https://pdftoexcel.netlify.app",
+    };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowedOrigins", policy =>
@@ -79,33 +66,85 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 10,
+                QueueLimit = 0
+            }));
+    options.AddPolicy("upload", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.User?.Identity?.Name
+                ?? context.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 5,
+                QueueLimit = 0
+            }));
+});
+
+builder.Services.AddMemoryCache();
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddAutoMapper(typeof(MappingProfile));
 
-builder.Services.AddSingleton<ApiPdfCsv.Shared.Logging.ILogger, ApiPdfCsv.Shared.Logging.Logger>();
-builder.Services.AddScoped<IPdfProcessorService, PdfProcessorService>();
-builder.Services.Configure<FileServiceOptions>(config =>
-{
-    config.OutputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
-    config.UploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
-});
-builder.Services.AddScoped<IEmailService, EmailService>();
-builder.Services.AddScoped<IFileService, FileService>();
-builder.Services.AddScoped<ProcessPdfUseCase>();
-builder.Services.AddScoped<IOfxProcessorService, OfxProcessorService>();
-builder.Services.AddScoped<ProcessOfxUseCase>();
-
-builder.Services.AddScoped<ICodigoContaRepository, CodigoContaRepository>();
-builder.Services.AddScoped<IImpostoRepository, ImpostoRepository>();
-builder.Services.AddScoped<ITermoEspecialRepository, TermoEspecialRepository>();
-builder.Services.AddScoped<ITermoEspecialService, TermoEspecialService>();
-builder.Services.AddScoped<ICodigoContaService, CodigoContaService>();
-builder.Services.AddScoped<IImpostoService, ImpostoService>();
+builder.Services.AddSharedInfrastructure();
+builder.Services.AddPdfProcessingModule(builder.Configuration);
+builder.Services.AddOfxProcessingModule();
+builder.Services.AddCodeManagementModule();
+builder.Services.AddAuthenticationModule();
 
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+var storageProvider = builder.Configuration.GetSection(StorageOptions.SectionName)["Provider"] ?? "Local";
+
+if (!string.IsNullOrWhiteSpace(connStr))
+{
+    builder.Services.AddHangfire(config =>
+        config.UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connStr)));
+    builder.Services.AddHangfireServer();
+}
+
+var healthChecksBuilder = builder.Services.AddHealthChecks();
+
+if (string.Equals(storageProvider, "S3", StringComparison.OrdinalIgnoreCase))
+{
+    healthChecksBuilder.AddCheck<S3StorageHealthCheck>("s3_storage", tags: new[] { "ready" });
+}
+else
+{
+    healthChecksBuilder.AddCheck("disk_outputs", () =>
+    {
+        var dir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
+        if (!Directory.Exists(dir))
+        {
+            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("outputs directory missing");
+        }
+
+        var drive = new DriveInfo(Path.GetPathRoot(dir) ?? dir);
+        var freeGb = drive.AvailableFreeSpace / (1024d * 1024 * 1024);
+        return freeGb < 1
+            ? Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Degraded($"Low disk space: {freeGb:F1} GB")
+            : Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy();
+    }, tags: new[] { "ready" });
+}
+
+if (!builder.Environment.IsEnvironment("Testing") && !string.IsNullOrWhiteSpace(connStr))
+{
+    healthChecksBuilder.AddNpgSql(connStr, name: "postgresql", tags: new[] { "ready" });
+}
 
 if (builder.Environment.IsDevelopment())
 {
@@ -116,29 +155,27 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connStr, npgsqlOptions => npgsqlOptions.EnableRetryOnFailure()));
 
 builder.Services.AddIdentityConfiguration(builder.Configuration);
-builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<IAuthService, AuthService>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() && !string.IsNullOrEmpty(connStr))
 {
-    using (var scope = app.Services.CreateScope())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.Migrate();
-    }
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
 }
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseHangfireDashboard("/hangfire");
 }
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowedOrigins");
+app.UseRateLimiter();
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -148,16 +185,16 @@ app.MapGet("/", () =>
     return "ok";
 });
 
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
+
 var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
 var uploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 if (!Directory.Exists(uploadDir)) Directory.CreateDirectory(uploadDir);
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(uploadDir),
-    RequestPath = "/uploads"
-});
 
 app.MapControllers();
 app.Run();

@@ -23,7 +23,7 @@ public class TokenService
 
     }
 
-    public string GenerateToken(ApplicationUser user)
+    public async Task<string> GenerateTokenAsync(ApplicationUser user)
     {
         var claims = new List<Claim>
             {
@@ -33,8 +33,7 @@ public class TokenService
                 new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-        // Adicionar roles como claims
-        var roles = _userManager.GetRolesAsync(user).Result;
+        var roles = await _userManager.GetRolesAsync(user);
         foreach (var role in roles)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));

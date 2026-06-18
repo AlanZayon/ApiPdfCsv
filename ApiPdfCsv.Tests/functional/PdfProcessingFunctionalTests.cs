@@ -1,60 +1,57 @@
-// using Xunit;
-// using Moq;
-// using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.Services;
-// using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
-// using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
-// using ApiPdfCsv.Shared.Logging;
-// using System.IO;
-// using System.Threading.Tasks;
-// using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
+using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
+using ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
+using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
+using ApiPdfCsv.Shared.Logging;
+using ApiPdfCsv.Shared.Storage;
+using Moq;
+using Xunit;
 
-// public class PdfProcessingFunctionalTests
-// {
-//     [Fact]
-//     public async Task FullProcessing_ValidPdf_GeneratesCsv()
-//     {
-//         var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "outputs");
-//         Directory.CreateDirectory(outputDir);
+namespace ApiPdfCsv.Tests.Functional;
 
-//         var csvPath = Path.Combine(outputDir, "PGTO.csv");
+public class PdfProcessingFunctionalTests
+{
+    [Fact]
+    public async Task FullProcessing_ValidPdf_GeneratesCsvInBlobStorage()
+    {
+        var outputDir = Path.Combine(Path.GetTempPath(), $"pdf-func-{Guid.NewGuid():N}", "outputs");
+        var uploadDir = Path.Combine(Path.GetTempPath(), $"pdf-func-{Guid.NewGuid():N}", "uploads");
 
-//         try
-//         {
-//             var logger = new Logger();
-            
-//             var mockImpostoService = new Mock<IImpostoService>();
-//             mockImpostoService.Setup(x => x.MapearDebito(It.IsAny<List<string>>(), It.IsAny<string>()))
-//                 .ReturnsAsync(new List<decimal> { 0m });
-//             mockImpostoService.Setup(x => x.MapearCredito(It.IsAny<List<string>>(), It.IsAny<string>()))
-//                 .ReturnsAsync(new List<decimal> { 0m });
+        var fileServiceMock = new Mock<IFileService>();
+        fileServiceMock.Setup(f => f.GetUserOutputDir(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns((string userId, string sessionId) => Path.Combine(outputDir, userId, sessionId));
+        fileServiceMock.Setup(f => f.GetUserUploadDir(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns((string userId, string sessionId) => Path.Combine(uploadDir, userId, sessionId));
+        fileServiceMock.Setup(f => f.GetUserFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns((string userId, string sessionId, string? fileName) =>
+                Path.Combine(outputDir, userId, sessionId, fileName ?? "PGTO.csv"));
+        fileServiceMock.Setup(f => f.ClearUserFiles(It.IsAny<string>(), It.IsAny<string>()));
 
-//             var pdfProcessor = new PdfProcessorService(logger, mockImpostoService.Object);
+        var blobStorage = new LocalBlobStorageService(fileServiceMock.Object);
+        var logger = new Logger();
 
-//             var mockFileService = new Mock<IFileService>();
-//             mockFileService.Setup(f => f.GetOutputDir()).Returns(outputDir);
-//             mockFileService.Setup(f => f.GetUploadDir()).Returns(string.Empty);
-//             mockFileService.Setup(f => f.ClearDirectories());
-//             mockFileService.Setup(f => f.GetSingleFile()).Returns(string.Empty);
+        var pdfProcessorMock = new Mock<IPdfProcessorService>();
+        pdfProcessorMock
+            .Setup(x => x.Process(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new ProcessedPdfData(new List<ComprovanteData>
+            {
+                new()
+                {
+                    DataArrecadacao = "01/01/2025",
+                    Descricoes = new List<string> { "PG. SIMPLES NACIONAL XX" },
+                    Debito = new List<decimal> { 531m },
+                    Credito = new List<decimal> { 100m },
+                    Total = new List<decimal> { 100m }
+                }
+            }));
 
-//             var useCase = new ProcessPdfUseCase(pdfProcessor, logger, mockFileService.Object);
-//             var testPdfPath = Path.Combine(Directory.GetCurrentDirectory(), "Resources", "test.pdf");
-//             const string userId = "test-user";
+        var useCase = new ProcessPdfUseCase(pdfProcessorMock.Object, logger, blobStorage);
+        const string userId = "test-user";
+        const string sessionId = "test-session";
 
-//             Assert.True(File.Exists(testPdfPath), $"Arquivo de teste '{testPdfPath}' não foi encontrado.");
+        var result = await useCase.Execute(new ProcessPdfCommand("dummy.pdf", userId, sessionId));
 
-//             var result = await useCase.Execute(new ProcessPdfCommand(testPdfPath, userId));
-
-//             Assert.NotNull(result);
-//             Assert.Equal(csvPath, result.OutputPath);
-//             Assert.True(File.Exists(csvPath), $"Arquivo esperado '{csvPath}' não foi gerado.");
-//         }
-//         finally
-//         {
-//             // Clean up the generated CSV
-//             if (File.Exists(csvPath))
-//             {
-//                 File.Delete(csvPath);
-//             }
-//         }
-//     }
-// }
+        Assert.NotNull(result);
+        Assert.Equal("PGTO.csv", result.OutputFile);
+        Assert.True(await blobStorage.ExistsAsync(userId, sessionId, "PGTO.csv"));
+    }
+}

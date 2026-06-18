@@ -1,3 +1,3 @@
 namespace ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
 
-public record ProcessPdfResult(string Message, string OutputPath);
+public record ProcessPdfResult(string Message, string OutputFile);

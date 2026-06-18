@@ -3,6 +3,7 @@ using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
 using ApiPdfCsv.Modules.CodeManagement.Domain.Entities;
 using ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces;
 using AutoMapper;
+using Microsoft.Extensions.Caching.Memory;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -15,18 +16,23 @@ public class ImpostoService : IImpostoService
     private readonly ICodigoContaService _codigoContaService;
 
     private readonly IMapper _mapper;
+    private readonly IMemoryCache _cache;
+
+    private static string CacheKey(string userId) => $"impostos:{userId}";
 
     public ImpostoService(
         IImpostoRepository impostoRepository,
         ICodigoContaRepository codigoContaRepository,
         ICodigoContaService codigoContaService,
-        IMapper mapper)
+        IMapper mapper,
+        IMemoryCache cache)
     {
         _impostoRepository = impostoRepository;
         _codigoContaRepository = codigoContaRepository;
         _codigoContaService = codigoContaService;
 
         _mapper = mapper;
+        _cache = cache;
     }
 
     public async Task<ImpostoDto?> ObterPorIdAsync(int id, string userId)
@@ -73,39 +79,52 @@ public class ImpostoService : IImpostoService
             await _impostoRepository.AtualizarAsyncRepository(imposto);
         }
 
+        _cache.Remove(CacheKey(userId));
+
         return await ObterTodosAsync(userId);
     }
 
 public async Task<List<decimal>> MapearDebito(List<string> historico, string userId)
 {
     var mapeamento = await ConstruirMapeamento(
-        userId, 
+        userId,
         (imposto) => imposto.CodigoDebito?.Codigo
     );
 
-    return historico.Select(item =>
-    {
-        var h = item.ToUpper();
-
-        foreach (var map in mapeamento)
-        {
-            if (h.Contains(map.Key))
-            {
-                return map.Value;
-            }
-        }
-
-        return 0m;
-    }).ToList();
+    return AplicarMapeamento(historico, mapeamento);
 }
 
 public async Task<List<decimal>> MapearCredito(List<string> historico, string userId)
 {
     var mapeamento = await ConstruirMapeamento(
-        userId, 
+        userId,
         (imposto) => imposto.CodigoCredito?.Codigo
     );
 
+    return AplicarMapeamento(historico, mapeamento);
+}
+
+public async Task<(List<decimal> Debitos, List<decimal> Creditos)> MapearDebitoECredito(
+    List<string> historico,
+    string userId)
+{
+    var impostos = await GetImpostosCachedAsync(userId);
+    var mapeamentoDebito = ConstruirMapeamentoDeImpostos(
+        impostos,
+        (imposto) => imposto.CodigoDebito?.Codigo
+    );
+    var mapeamentoCredito = ConstruirMapeamentoDeImpostos(
+        impostos,
+        (imposto) => imposto.CodigoCredito?.Codigo
+    );
+
+    return (AplicarMapeamento(historico, mapeamentoDebito), AplicarMapeamento(historico, mapeamentoCredito));
+}
+
+private static List<decimal> AplicarMapeamento(
+    List<string> historico,
+    Dictionary<string, decimal> mapeamento)
+{
     return historico.Select(item =>
     {
         var h = item.ToUpper();
@@ -123,13 +142,28 @@ public async Task<List<decimal>> MapearCredito(List<string> historico, string us
 }
 
 private async Task<Dictionary<string, decimal>> ConstruirMapeamento(
-    string userId, 
+    string userId,
     Func<Imposto, string?> obterCodigo)
 {
-    var impostos = await _impostoRepository.ObterTodosComCodigosAsync(userId);
+    var impostos = await GetImpostosCachedAsync(userId);
+    return ConstruirMapeamentoDeImpostos(impostos, obterCodigo);
+}
+
+private async Task<IEnumerable<Imposto>> GetImpostosCachedAsync(string userId)
+{
+    return await _cache.GetOrCreateAsync(CacheKey(userId), async entry =>
+    {
+        entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+        return await _impostoRepository.ObterTodosComCodigosAsync(userId);
+    }) ?? Enumerable.Empty<Imposto>();
+}
+
+private static Dictionary<string, decimal> ConstruirMapeamentoDeImpostos(
+    IEnumerable<Imposto> impostos,
+    Func<Imposto, string?> obterCodigo)
+{
     var mapeamento = new Dictionary<string, decimal>();
 
-    // Mapeamentos de sinônimos
     var sinonimos = new Dictionary<string, List<string>>
     {
         { "INSS", new List<string> { "INSS", "DCTFWEB" } },
@@ -148,11 +182,9 @@ private async Task<Dictionary<string, decimal>> ConstruirMapeamento(
             continue;
 
         var nomePadrao = imposto.Nome.ToUpper().Replace("_", " ");
-        
-        // Mapeamento do nome original
+
         mapeamento[nomePadrao] = codigo;
 
-        // Aplica sinônimos
         foreach (var sinonimo in sinonimos)
         {
             if (nomePadrao.Contains(sinonimo.Key))

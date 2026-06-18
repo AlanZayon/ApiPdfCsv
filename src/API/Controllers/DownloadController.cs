@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
-using System.Security.Claims;
+using ApiPdfCsv.Shared.Helpers;
 using ApiPdfCsv.Shared.Logging;
+using ApiPdfCsv.Shared.Processing;
+using ApiPdfCsv.Shared.Storage;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
 
 namespace ApiPdfCsv.API.Controllers;
@@ -13,71 +14,51 @@ namespace ApiPdfCsv.API.Controllers;
 public class DownloadController : ControllerBase
 {
     private readonly ILogger _logger;
-    private readonly IFileService _fileService;
+    private readonly IBlobStorageService _blobStorage;
 
-    public DownloadController(ILogger logger, IFileService fileService)
+    public DownloadController(ILogger logger, IBlobStorageService blobStorage)
     {
         _logger = logger;
-        _fileService = fileService;
+        _blobStorage = blobStorage;
     }
 
     [HttpGet("download")]
-    public IActionResult DownloadFile()
+    public async Task<IActionResult> DownloadFile([FromQuery] string? file = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var userSessionId = GetUserSessionId();
+            var userId = UserSessionHelper.GetUserId(User);
+            var userSessionId = UserSessionHelper.ResolveSessionId(HttpContext);
 
-            var filePath = _fileService.GetUserFile(userSessionId);
-            var fileStream = System.IO.File.OpenRead(filePath);
-            var fileName = Path.GetFileName(filePath);
+            var fileName = await _blobStorage.ResolveOutputFileNameAsync(userId, userSessionId, file, cancellationToken);
+            var fileStream = await _blobStorage.OpenReadAsync(userId, userSessionId, fileName, BlobScope.Output, cancellationToken);
 
             _logger.Info($"Download realizado com sucesso: {fileName} para sessão {userSessionId}");
 
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
 
-            Response.OnCompleted(async () =>
+            Response.OnCompleted(() =>
             {
-                try
-                {
-                    await _fileService.ScheduleCleanup(userSessionId, TimeSpan.FromMinutes(30));
-                    _logger.Info($"Limpeza agendada para sessão {userSessionId} em 30 minutos");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error($"Erro ao agendar limpeza da sessão {userSessionId}: {ex.Message}", ex);
-                }
+                SessionCleanupJob.Schedule(userId, userSessionId, TimeSpan.FromMinutes(30));
+                _logger.Info($"Limpeza agendada para sessão {userSessionId} em 30 minutos");
+                return Task.CompletedTask;
             });
 
-
-            return File(fileStream, "application/octet-stream", fileName);
+            return File(fileStream, "text/csv", fileName);
         }
         catch (FileNotFoundException ex)
         {
             _logger.Warn(ex.Message);
             return NotFound(new { message = "Nenhum arquivo disponível para download" });
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Forbid(ex.Message);
+        }
         catch (Exception ex)
         {
             _logger.Error($"Erro ao realizar download: {ex.Message}", ex);
-            return StatusCode(500, new { message = "Erro ao realizar download", error = ex.Message });
+            return StatusCode(500, new { message = "Erro ao realizar download." });
         }
-    }
-
-    private string GetUserSessionId()
-    {
-        var sessionId = Request.Headers["X-User-Session"].FirstOrDefault()
-                     ?? Request.Query["sessionId"].FirstOrDefault();
-
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
-            var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-            var guid = Guid.NewGuid().ToString("N").Substring(0, 8);
-
-            sessionId = $"{userId}_{guid}_{timestamp}";
-        }
-
-        return sessionId;
     }
 }

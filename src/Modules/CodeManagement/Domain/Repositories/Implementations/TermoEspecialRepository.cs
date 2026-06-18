@@ -31,6 +31,19 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Implementations
                 t => t);
         }
 
+        public async Task<Dictionary<(string Termo, int? CodigoBanco, bool TipoValor), TermoEspecial>>
+            BuscarTodosPorUsuarioCnpjAsync(string userId, string cnpj)
+        {
+            var resultados = await _context.TermoEspecial
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && t.CNPJ == cnpj)
+                .ToListAsync();
+
+            return resultados.ToDictionary(
+                t => (t.Termo, t.CodigoBanco, t.TipoValor),
+                t => t);
+        }
+
         public async Task AdicionarOuAtualizarEmLoteAsync(IEnumerable<TermoEspecial> termos)
         {
             var termosList = termos.ToList();

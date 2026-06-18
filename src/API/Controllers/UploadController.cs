@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using ApiPdfCsv.Modules.PdfProcessing.Application.UseCases;
-using ApiPdfCsv.Modules.PdfProcessing.Domain.Interfaces;
+using Microsoft.AspNetCore.RateLimiting;
 using ApiPdfCsv.Modules.OfxProcessing.Domain.Entities;
-using ApiPdfCsv.Modules.OfxProcessing.Application.UseCases;
-using ApiPdfCsv.Modules.OfxProcessing.Domain.Interfaces;
-using ApiPdfCsv.Modules.PdfProcessing.Infrastructure.File;
-using System.Security.Claims;
+using ApiPdfCsv.Shared.Helpers;
+using ApiPdfCsv.Shared.Validation;
 using ApiPdfCsv.Shared.Logging;
+using ApiPdfCsv.Shared.Processing;
+using ApiPdfCsv.Shared.Storage;
+using Hangfire;
+using System.Text.Json;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
 
 namespace ApiPdfCsv.API.Controllers;
@@ -18,147 +19,184 @@ namespace ApiPdfCsv.API.Controllers;
 public class UploadController : ControllerBase
 {
     private readonly ILogger _logger;
-    private readonly IFileService _fileService;
-    private readonly ProcessPdfUseCase _processPdfUseCase;
-    private readonly ProcessOfxUseCase _processOfxUseCase;
+    private readonly IBlobStorageService _blobStorage;
+    private readonly IUploadJobService _uploadJobService;
 
     public UploadController(
         ILogger logger,
-        IFileService fileService,
-        ProcessPdfUseCase processPdfUseCase,
-        ProcessOfxUseCase processOfxUseCase
-    )
+        IBlobStorageService blobStorage,
+        IUploadJobService uploadJobService)
     {
         _logger = logger;
-        _fileService = fileService;
-        _processPdfUseCase = processPdfUseCase;
-        _processOfxUseCase = processOfxUseCase;
+        _blobStorage = blobStorage;
+        _uploadJobService = uploadJobService;
     }
 
-[HttpPost("upload")]
-public async Task<IActionResult> Upload(IFormFile file)
-{
-    if (file == null || file.Length == 0)
+    [HttpGet("status/{jobId}")]
+    public async Task<IActionResult> GetJobStatus(string jobId, CancellationToken cancellationToken)
     {
-        _logger.Warn("Tentativa de upload sem envio de arquivo.");
-        return BadRequest(new { message = "Arquivo não enviado." });
-    }
+        var userId = UserSessionHelper.GetUserId(User);
+        var status = await _uploadJobService.GetStatusAsync(jobId, userId, cancellationToken);
 
-    var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-    var filePath = Path.GetTempFileName();
-    var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
-    var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
-    
-    // NOVO: Headers do pro labore
-    var proLaboreAno = Request.Headers["ProLabore-Ano"].ToString();
-    var proLaboreValor = Request.Headers["ProLabore-Valor"].ToString();
-    
-    var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-    var userSessionId = GetUserSessionId();
-
-    try
-    {
-        await using (var stream = System.IO.File.Create(filePath))
+        if (status == null)
         {
-            await file.CopyToAsync(stream);
+            return NotFound(new { message = "Job não encontrado." });
         }
 
-        _logger.Info($"Arquivo recebido: {file.FileName}, extensão: {extension}");
-
-        switch (extension)
+        if (status.State == UploadJobState.Completed && status.Result.HasValue)
         {
-            case ".pdf":
-                var pdfCommand = new ProcessPdfCommand(
-                    filePath, 
-                    userId, 
-                    userSessionId,
-                    proLaboreAno, // NOVO
-                    proLaboreValor // NOVO
-                );
-                var pdfResult = await _processPdfUseCase.Execute(pdfCommand);
-                _logger.Info($"Processamento PDF concluído com sucesso: {pdfResult}");
-                return Ok(new { type = "pdf", result = pdfResult });
-
-            case ".ofx":
-                var ofxCommand = new ProcessOfxCommand(filePath, cnpj, userId, codigoBanco, userSessionId);
-                var ofxResult = await _processOfxUseCase.Execute(ofxCommand);
-                if (ofxResult.TransacoesPendentes != null && ofxResult.TransacoesPendentes.Any())
-                {
-                    return Ok(new
-                    {
-                        type = "ofx",
-                        status = "pending_classification",
-                        transacoesClassificadas = ofxResult.TransacoesClassificadas,
-                        pendingTransactions = ofxResult.TransacoesPendentes,
-                        filePath
-                    });
-                }
-
-                return Ok(new
-                {
-                    type = "ofx",
-                    status = "completed",
-                    outputPath = ofxResult.OutputPath,
-                    transacoesClassificadas = ofxResult.TransacoesClassificadas
-                });
-
-            default:
-                _logger.Warn($"Extensão de arquivo não suportada: {extension}");
-                return BadRequest(new { message = "Tipo de arquivo não suportado. Use apenas PDF ou OFX." });
+            return Ok(new
+            {
+                status.JobId,
+                state = status.State.ToString(),
+                status.Message,
+                status.CreatedAtUtc,
+                status.CompletedAtUtc,
+                status.OutputFile,
+                result = status.Result.Value
+            });
         }
-    }
-    catch (Exception ex)
-    {
-        _logger.Error($"Erro ao processar arquivo {file.FileName}: {ex.Message}", ex);
-        return StatusCode(500, new { message = "Erro ao processar arquivo", error = ex.Message });
-    }
-    finally
-    {
-        if (System.IO.File.Exists(filePath))
-        {
-            System.IO.File.Delete(filePath);
-        }
-    }
-}
-
-    [HttpPost("finalizar-processamento")]
-    public async Task<IActionResult> FinalizarProcessamento([FromBody] FinalizacaoRequest request)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var userSessionId = GetUserSessionId();
-
-
-        var outputPath = await _processOfxUseCase.FinalizarProcessamento(
-            request.TransacoesClassificadas,
-            request.Classificacoes,
-            request.TransacoesPendentes,
-            userId,
-            request.CNPJ,
-            userSessionId
-        );
 
         return Ok(new
         {
-            status = "completed",
-            outputPath
+            status.JobId,
+            state = status.State.ToString(),
+            status.Message,
+            status.CreatedAtUtc,
+            status.CompletedAtUtc,
+            status.OutputFile
         });
     }
 
-    private string GetUserSessionId()
+    [HttpPost("upload")]
+    [EnableRateLimiting("upload")]
+    public async Task<IActionResult> Upload(IFormFile file, CancellationToken cancellationToken)
     {
-        var sessionId = Request.Headers["X-User-Session"].FirstOrDefault()
-                     ?? Request.Query["sessionId"].FirstOrDefault();
-
-        if (string.IsNullOrEmpty(sessionId))
+        if (file == null || file.Length == 0)
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
-            var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-            var guid = Guid.NewGuid().ToString("N").Substring(0, 8);
-
-            sessionId = $"{userId}_{guid}_{timestamp}";
+            _logger.Warn("Tentativa de upload sem envio de arquivo.");
+            return BadRequest(new { message = "Arquivo não enviado." });
         }
 
-        return sessionId;
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
+        var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
+        var proLaboreAno = Request.Headers["ProLabore-Ano"].ToString();
+        var proLaboreValor = Request.Headers["ProLabore-Valor"].ToString();
+
+        var userId = UserSessionHelper.GetUserId(User);
+        var userSessionId = UserSessionHelper.ResolveSessionId(HttpContext);
+
+        try
+        {
+            UploadFileValidator.ValidateFile(file, extension);
+
+            if (extension == ".ofx")
+            {
+                UploadFileValidator.ValidateCnpj(cnpj);
+            }
+
+            if (extension is not (".pdf" or ".ofx"))
+            {
+                _logger.Warn($"Extensão de arquivo não suportada: {extension}");
+                return BadRequest(new { message = "Tipo de arquivo não suportado. Use apenas PDF ou OFX." });
+            }
+
+            var inputFileName = $"input{extension}";
+            await using (var uploadStream = file.OpenReadStream())
+            {
+                await _blobStorage.SaveAsync(
+                    userId,
+                    userSessionId,
+                    inputFileName,
+                    uploadStream,
+                    BlobScope.Upload,
+                    cancellationToken);
+            }
+
+            await using (var validationStream = await _blobStorage.OpenReadAsync(
+                userId, userSessionId, inputFileName, BlobScope.Upload, cancellationToken))
+            {
+                var tempPath = Path.GetTempFileName();
+                try
+                {
+                    await using (var tempStream = System.IO.File.Create(tempPath))
+                    {
+                        await validationStream.CopyToAsync(tempStream, cancellationToken);
+                    }
+
+                    await UploadFileValidator.ValidateContentAsync(tempPath, extension);
+                }
+                finally
+                {
+                    if (System.IO.File.Exists(tempPath))
+                    {
+                        System.IO.File.Delete(tempPath);
+                    }
+                }
+            }
+
+            var metadata = new UploadJobMetadata
+            {
+                Cnpj = cnpj,
+                CodigoBanco = codigoBanco,
+                ProLaboreAno = int.TryParse(proLaboreAno, out var ano) ? ano : null,
+                ProLaboreValor = decimal.TryParse(proLaboreValor, out var valor) ? valor : null
+            };
+
+            var jobId = await _uploadJobService.CreateJobAsync(userId, new CreateUploadJobRequest(
+                userSessionId,
+                "upload",
+                extension.TrimStart('.'),
+                inputFileName,
+                JsonSerializer.Serialize(metadata)), cancellationToken);
+
+            BackgroundJob.Enqueue<UploadProcessingJob>(job => job.ProcessUploadAsync(jobId, CancellationToken.None));
+
+            _logger.Info($"Arquivo enfileirado: {file.FileName}, jobId: {jobId}");
+
+            return Accepted(new
+            {
+                jobId,
+                state = UploadJobState.Processing.ToString(),
+                message = "Arquivo recebido e enfileirado para processamento."
+            });
+        }
+        catch (InvalidDataException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Forbid(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Erro ao enfileirar arquivo {file.FileName}: {ex.Message}", ex);
+            return StatusCode(500, new { message = "Erro ao processar arquivo." });
+        }
     }
 
+    [HttpPost("finalizar-processamento")]
+    public async Task<IActionResult> FinalizarProcessamento([FromBody] FinalizacaoRequest request, CancellationToken cancellationToken)
+    {
+        var userId = UserSessionHelper.GetUserId(User);
+        var userSessionId = UserSessionHelper.ResolveSessionId(HttpContext);
+
+        var jobId = await _uploadJobService.CreateJobAsync(userId, new CreateUploadJobRequest(
+            userSessionId,
+            "finalize",
+            "ofx",
+            null,
+            JsonSerializer.Serialize(request)), cancellationToken);
+
+        BackgroundJob.Enqueue<UploadProcessingJob>(job => job.ProcessFinalizeAsync(jobId, CancellationToken.None));
+
+        return Accepted(new
+        {
+            jobId,
+            state = UploadJobState.Processing.ToString(),
+            message = "Finalização enfileirada para processamento."
+        });
+    }
 }

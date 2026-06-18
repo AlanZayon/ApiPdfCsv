@@ -13,7 +13,6 @@ namespace ApiPdfCsv.Modules.CodeManagement.Application.Interfaces
         // Task<bool> RemoverAsync(int id, string userId);
         Task<List<decimal>> MapearDebito(List<string> historico, string userId);
         Task<List<decimal>> MapearCredito(List<string> historico, string userId);
-
-
+        Task<(List<decimal> Debitos, List<decimal> Creditos)> MapearDebitoECredito(List<string> historico, string userId);
     }
 }
