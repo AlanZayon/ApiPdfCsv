@@ -32,6 +32,12 @@ public static class ExcelGenerator
         }
 
         var csvContent = BuildFixedLayoutCsv(dadosParaProcessar);
+        if (string.IsNullOrWhiteSpace(csvContent))
+        {
+            throw new InvalidDataException(
+                "Nenhum lançamento válido para gerar o CSV. Verifique se as datas estão no formato dd/MM/yyyy.");
+        }
+
         return new UTF8Encoding(true).GetBytes(csvContent);
     }
 

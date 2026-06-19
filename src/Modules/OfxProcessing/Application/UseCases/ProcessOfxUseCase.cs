@@ -276,6 +276,18 @@ public class ProcessOfxUseCase
             ProcessarTransacoesPendentes(transacoesPendentes, classificacoesAtualizadas, todasTransacoes);
         }
 
+        if (todasTransacoes.Count == 0 && classificacoesAtualizadas.Count > 0)
+        {
+            _logger.Warn("Nenhuma transação encontrada via merge — gerando CSV diretamente das classificações enviadas.");
+            todasTransacoes = ConverterClassificacoesParaExcel(classificacoesAtualizadas);
+        }
+
+        if (todasTransacoes.Count == 0)
+        {
+            throw new InvalidDataException(
+                "Nenhuma transação classificada para gerar o CSV. Verifique se todas as descrições foram classificadas.");
+        }
+
         await SaveOfxCsvFromExcelDataAsync(todasTransacoes, userId, userSessionId);
 
         return new ProcessOfxResultFinalizado(
@@ -376,6 +388,17 @@ public class ProcessOfxUseCase
                termo.CodigoBanco != classificacao.CodigoBanco;
     }
 
+    private static string CriarChaveTransacao(string descricao, string data, decimal valor)
+        => $"{descricao}|{data}|{valor.ToString("F2", CultureInfo.InvariantCulture)}";
+
+    private static List<ExcelData> ConverterClassificacoesParaExcel(List<ClassificacaoTransacao> classificacoes)
+    {
+        return classificacoes
+            .Where(c => !string.IsNullOrWhiteSpace(c.Data) && !string.IsNullOrWhiteSpace(c.Descricao))
+            .Select(c => CriarExcelData(c.Data, c.Valor, c))
+            .ToList();
+    }
+
     private List<ExcelData> ConverterTransacoesComClassificacoesAtualizadas(
         List<Transacao> transacoesClassificadas,
         List<ClassificacaoTransacao> classificacoesAtualizadas)
@@ -383,7 +406,7 @@ public class ProcessOfxUseCase
         var todasTransacoes = new List<ExcelData>(transacoesClassificadas.Sum(t => t.Datas.Count));
 
         var classificacaoDict = classificacoesAtualizadas
-            .GroupBy(c => $"{c.Descricao}|{c.Data}|{c.Valor}")
+            .GroupBy(c => CriarChaveTransacao(c.Descricao, c.Data, c.Valor))
             .ToDictionary(g => g.Key, g => new Queue<ClassificacaoTransacao>(g));
 
         var classificacaoFallbackDict = classificacoesAtualizadas
@@ -397,7 +420,7 @@ public class ProcessOfxUseCase
             {
                 var data = transacao.Datas[i];
                 var valor = transacao.Valores[i];
-                var chave = $"{transacao.Descricao}|{data}|{valor}";
+                var chave = CriarChaveTransacao(transacao.Descricao, data, valor);
 
                 ClassificacaoTransacao? classificacao = null;
 
@@ -432,7 +455,7 @@ public class ProcessOfxUseCase
         List<ExcelData> todasTransacoes)
     {
         var classificacaoDict = classificacoesAtualizadas
-            .GroupBy(c => $"{c.Descricao}|{c.Data}|{c.Valor}")
+            .GroupBy(c => CriarChaveTransacao(c.Descricao, c.Data, c.Valor))
             .ToDictionary(g => g.Key, g => new Queue<ClassificacaoTransacao>(g));
 
         var classificacaoFallbackDict = classificacoesAtualizadas
@@ -445,7 +468,7 @@ public class ProcessOfxUseCase
             {
                 var data = transacaoPendente.Datas[i];
                 var valor = transacaoPendente.Valores[i];
-                var chave = $"{transacaoPendente.Descricao}|{data}|{valor}";
+                var chave = CriarChaveTransacao(transacaoPendente.Descricao, data, valor);
 
                 ClassificacaoTransacao? classificacao = null;
 

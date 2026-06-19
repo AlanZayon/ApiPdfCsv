@@ -110,6 +110,43 @@ public class ProcessOfxUseCaseTests : IDisposable
         Assert.Null(result.TransacoesPendentes);
         Assert.NotNull(result.OutputFile);
         Assert.Equal("EXTRATO.csv", result.OutputFile);
+    [Fact]
+    public async Task FinalizarProcessamento_WhenOnlyClassificacoesProvided_GeneratesExtratoCsv()
+    {
+        var sessionId = "user123_session456";
+        _termoRepositoryMock
+            .Setup(x => x.BuscarTodosPorUsuarioCnpjAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<(string, int?, bool), TermoEspecial>());
+
+        var useCase = new ProcessOfxUseCase(
+            _ofxProcessorMock.Object,
+            _loggerMock.Object,
+            _blobStorage,
+            _termoRepositoryMock.Object);
+
+        var classificacoes = new List<ClassificacaoTransacao>
+        {
+            new()
+            {
+                Descricao = "PIX RECEBIDO",
+                Data = "01/01/2025",
+                Valor = 100m,
+                CodigoDebito = 1111,
+                CodigoCredito = 2222,
+                CodigoBanco = 341,
+                IsClassificacaoIndividual = false
+            }
+        };
+
+        var result = await useCase.FinalizarProcessamento(
+            transacoesClassificadas: new List<Transacao>(),
+            classificacoes: classificacoes,
+            transacoesPendentes: new List<Transacao>(),
+            userId: "user123",
+            cnpj: "12345678000199",
+            userSessionId: sessionId);
+
+        Assert.Equal("EXTRATO.csv", result.OutputFile);
         Assert.True(await _blobStorage.ExistsAsync("user123", sessionId, "EXTRATO.csv"));
     }
 }
