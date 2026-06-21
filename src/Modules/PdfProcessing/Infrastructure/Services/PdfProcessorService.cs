@@ -19,6 +19,7 @@ public class PdfProcessorService : IPdfProcessorService
 {
     private readonly ILogger _logger;
     private readonly IImpostoService _impostoService;
+    private int? _clienteId;
 
     public PdfProcessorService(ILogger logger, IImpostoService impostoService)
     {
@@ -26,8 +27,9 @@ public class PdfProcessorService : IPdfProcessorService
         _logger = logger;
     }
 
-    public async Task<ProcessedPdfData> Process(string filePath, string userId)
+    public async Task<ProcessedPdfData> Process(string filePath, string userId, int? clienteId = null)
     {
+        _clienteId = clienteId;
         _logger.Info($"Processing PDF file: {filePath}");
         
         var current = InitializeCurrent();
@@ -88,6 +90,13 @@ public class PdfProcessorService : IPdfProcessorService
         }
 
         current = FinalizarComprovante(current, comprovantes, userId, descricoes, debitos, creditos, totais);
+
+        if (comprovantes.Count == 0)
+        {
+            throw new InvalidDataException(
+                "PDF não reconhecido como Documento de Arrecadação. Verifique se o arquivo é um DARF/DAS válido.");
+        }
+
         return new ProcessedPdfData(comprovantes);
     }
 
@@ -172,7 +181,7 @@ public class PdfProcessorService : IPdfProcessorService
             new List<decimal>(totais)
         );
 
-        var (debitosMapeados, creditosMapeados) = await _impostoService.MapearDebitoECredito(descricoesAgrupadas, userId);
+        var (debitosMapeados, creditosMapeados) = await _impostoService.MapearDebitoECredito(descricoesAgrupadas, userId, _clienteId);
         debitos.AddRange(debitosMapeados);
         creditos.AddRange(creditosMapeados);
 
@@ -205,7 +214,8 @@ public class PdfProcessorService : IPdfProcessorService
         current.Descricoes.Add(multaDescricao);
         var (debitosMulta, creditosMulta) = await _impostoService.MapearDebitoECredito(
             new List<string> { multaDescricao },
-            userId
+            userId,
+            _clienteId
         );
         current.Debito.AddRange(debitosMulta);
         current.Credito.AddRange(creditosMulta);

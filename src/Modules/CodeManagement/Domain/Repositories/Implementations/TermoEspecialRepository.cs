@@ -194,5 +194,49 @@ bool tipoPositivo)
             }
         }
 
+        public async Task<IEnumerable<TermoEspecial>> SugerirPorTermoAsync(
+            string userId,
+            string cnpj,
+            string termo,
+            int limit = 5)
+        {
+            var normalized = termo.Trim().ToLowerInvariant();
+            return await _context.TermoEspecial
+                .AsNoTracking()
+                .Where(t =>
+                    t.UserId == userId &&
+                    t.CNPJ == cnpj &&
+                    EF.Functions.ILike(t.Termo, $"%{normalized}%"))
+                .OrderBy(t => t.Termo.Length)
+                .Take(limit)
+                .ToListAsync();
+        }
+
+        public async Task<int> CopiarMapeamentosAsync(
+            string userId,
+            string cnpjOrigem,
+            string cnpjDestino,
+            int? codigoBancoOrigem,
+            int? codigoBancoDestino)
+        {
+            var origem = await BuscarPorUsuarioCnpjEBancoAsync(userId, cnpjOrigem, codigoBancoOrigem);
+            var copias = origem.Select(t => new TermoEspecial
+            {
+                Id = Guid.NewGuid().ToString(),
+                Termo = t.Termo,
+                UserId = userId,
+                CodigoDebito = t.CodigoDebito,
+                CodigoCredito = t.CodigoCredito,
+                CodigoBanco = codigoBancoDestino ?? t.CodigoBanco,
+                CNPJ = cnpjDestino,
+                TipoValor = t.TipoValor
+            }).ToList();
+
+            if (copias.Count == 0) return 0;
+
+            await AdicionarOuAtualizarEmLoteAsync(copias);
+            return copias.Count;
+        }
+
     }
 }

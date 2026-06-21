@@ -33,18 +33,20 @@ public class ConfiguracaoController : ControllerBase
 
     #region Impostos
     [HttpGet("impostos")]
-    public async Task<IActionResult> ObterImpostos()
+    public async Task<IActionResult> ObterImpostos([FromQuery] int? clienteId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var impostos = await _impostoService.ObterTodosAsync(userId ?? string.Empty);
+        var impostos = await _impostoService.ObterTodosAsync(userId ?? string.Empty, clienteId);
         return Ok(impostos);
     }
 
     [HttpPut("impostos")]
-    public async Task<IActionResult> AtualizarImpostos([FromBody] IEnumerable<ImpostoDto> impostos)
+    public async Task<IActionResult> AtualizarImpostos(
+        [FromBody] IEnumerable<ImpostoDto> impostos,
+        [FromQuery] int? clienteId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var resultado = await _impostoService.AtualizarAsyncService(impostos, userId ?? string.Empty);
+        var resultado = await _impostoService.AtualizarAsyncService(impostos, userId ?? string.Empty, clienteId);
         return Ok(resultado);
     }
     #endregion
@@ -106,6 +108,69 @@ public class ConfiguracaoController : ControllerBase
             _logger.Info(ex + "Erro ao atualizar descrições");
             return StatusCode(500, "Erro interno do servidor");
         }
+    }
+
+    [HttpGet("descricoes/export")]
+    public async Task<IActionResult> ExportarDescricoes(
+        [FromQuery] string cnpj,
+        [FromQuery] int? codigoBanco)
+    {
+        if (string.IsNullOrEmpty(cnpj))
+            return BadRequest("CNPJ é obrigatório");
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var csv = await _termoEspecialService.ExportarCsvAsync(userId, cnpj, codigoBanco);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+        return File(bytes, "text/csv", "mapeamentos-ofx.csv");
+    }
+
+    [HttpPost("descricoes/import")]
+    public async Task<IActionResult> ImportarDescricoes(
+        [FromQuery] string cnpj,
+        [FromQuery] int? codigoBanco,
+        IFormFile file)
+    {
+        if (string.IsNullOrEmpty(cnpj))
+            return BadRequest("CNPJ é obrigatório");
+
+        if (file == null || file.Length == 0)
+            return BadRequest("Arquivo CSV é obrigatório");
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        await using var stream = file.OpenReadStream();
+        var count = await _termoEspecialService.ImportarCsvAsync(userId, cnpj, codigoBanco, stream);
+
+        return Ok(new { message = $"{count} mapeamentos importados.", count });
+    }
+
+    [HttpGet("descricoes/suggest")]
+    public async Task<IActionResult> SugerirDescricoes(
+        [FromQuery] string cnpj,
+        [FromQuery] string termo)
+    {
+        if (string.IsNullOrEmpty(cnpj) || string.IsNullOrEmpty(termo))
+            return BadRequest("CNPJ e termo são obrigatórios");
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var sugestoes = await _termoEspecialService.SugerirAsync(userId, cnpj, termo);
+        return Ok(sugestoes);
+    }
+
+    [HttpPost("descricoes/copiar")]
+    public async Task<IActionResult> CopiarDescricoes([FromBody] CopiarMapeamentosRequest request)
+    {
+        if (string.IsNullOrEmpty(request.CnpjOrigem) || string.IsNullOrEmpty(request.CnpjDestino))
+            return BadRequest("CNPJs de origem e destino são obrigatórios");
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var count = await _termoEspecialService.CopiarMapeamentosAsync(
+            userId,
+            request.CnpjOrigem,
+            request.CnpjDestino,
+            request.CodigoBancoOrigem,
+            request.CodigoBancoDestino);
+
+        return Ok(new { message = $"{count} mapeamentos copiados.", count });
     }
     #endregion
 }

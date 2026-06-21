@@ -16,6 +16,8 @@ public class MappingProfile : Profile
         CreateMap<TermoEspecial, TermoEspecialDto>();
 
         CreateMap<TermoEspecialDto, TermoEspecial>();
+
+        CreateMap<Cliente, ClienteDto>();
     
     }
 }

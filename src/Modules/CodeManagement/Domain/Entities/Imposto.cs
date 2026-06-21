@@ -9,4 +9,6 @@ public class Imposto
     public int? CodigoCreditoId { get; set; }
     public CodigoConta? CodigoCredito { get; set; }
     public string? UserId { get; set; }
+    public int? ClienteId { get; set; }
+    public Cliente? Cliente { get; set; }
 }

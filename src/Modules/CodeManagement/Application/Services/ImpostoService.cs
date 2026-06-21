@@ -18,7 +18,8 @@ public class ImpostoService : IImpostoService
     private readonly IMapper _mapper;
     private readonly IMemoryCache _cache;
 
-    private static string CacheKey(string userId) => $"impostos:{userId}";
+    private static string CacheKey(string userId, int? clienteId)
+        => clienteId.HasValue ? $"impostos:{userId}:cliente:{clienteId}" : $"impostos:{userId}";
 
     public ImpostoService(
         IImpostoRepository impostoRepository,
@@ -35,27 +36,30 @@ public class ImpostoService : IImpostoService
         _cache = cache;
     }
 
-    public async Task<ImpostoDto?> ObterPorIdAsync(int id, string userId)
+    public async Task<ImpostoDto?> ObterPorIdAsync(int id, string userId, int? clienteId = null)
     {
-        var imposto = await _impostoRepository.ObterPorIdAsync(id, userId);
+        var imposto = await _impostoRepository.ObterPorIdAsync(id, userId, clienteId);
         if (imposto == null)
             return null;
 
         return _mapper.Map<ImpostoDto>(imposto);
     }
 
-    public async Task<IEnumerable<ImpostoDto>> ObterTodosAsync(string userId)
+    public async Task<IEnumerable<ImpostoDto>> ObterTodosAsync(string userId, int? clienteId = null)
     {
-        var impostos = await _impostoRepository.ObterTodosComCodigosAsync(userId);
+        var impostos = await _impostoRepository.ObterTodosComCodigosAsync(userId, clienteId);
         return _mapper.Map<IEnumerable<ImpostoDto>>(impostos);
     }
 
 
-    public async Task<IEnumerable<ImpostoDto>> AtualizarAsyncService(IEnumerable<ImpostoDto> impostos, string userId)
+    public async Task<IEnumerable<ImpostoDto>> AtualizarAsyncService(
+        IEnumerable<ImpostoDto> impostos,
+        string userId,
+        int? clienteId = null)
     {
         foreach (var dto in impostos)
         {
-            var imposto = await _impostoRepository.ObterPorIdAsync(dto.Id, userId);
+            var imposto = await _impostoRepository.ObterPorIdAsync(dto.Id, userId, clienteId);
             if (imposto == null)
                 throw new Exception($"Imposto com ID {dto.Id} não encontrado.");
 
@@ -79,25 +83,29 @@ public class ImpostoService : IImpostoService
             await _impostoRepository.AtualizarAsyncRepository(imposto);
         }
 
-        _cache.Remove(CacheKey(userId));
+        _cache.Remove(CacheKey(userId, clienteId));
+        if (clienteId.HasValue)
+            _cache.Remove(CacheKey(userId, null));
 
-        return await ObterTodosAsync(userId);
+        return await ObterTodosAsync(userId, clienteId);
     }
 
-public async Task<List<decimal>> MapearDebito(List<string> historico, string userId)
+public async Task<List<decimal>> MapearDebito(List<string> historico, string userId, int? clienteId = null)
 {
     var mapeamento = await ConstruirMapeamento(
         userId,
+        clienteId,
         (imposto) => imposto.CodigoDebito?.Codigo
     );
 
     return AplicarMapeamento(historico, mapeamento);
 }
 
-public async Task<List<decimal>> MapearCredito(List<string> historico, string userId)
+public async Task<List<decimal>> MapearCredito(List<string> historico, string userId, int? clienteId = null)
 {
     var mapeamento = await ConstruirMapeamento(
         userId,
+        clienteId,
         (imposto) => imposto.CodigoCredito?.Codigo
     );
 
@@ -106,9 +114,10 @@ public async Task<List<decimal>> MapearCredito(List<string> historico, string us
 
 public async Task<(List<decimal> Debitos, List<decimal> Creditos)> MapearDebitoECredito(
     List<string> historico,
-    string userId)
+    string userId,
+    int? clienteId = null)
 {
-    var impostos = await GetImpostosCachedAsync(userId);
+    var impostos = await GetImpostosCachedAsync(userId, clienteId);
     var mapeamentoDebito = ConstruirMapeamentoDeImpostos(
         impostos,
         (imposto) => imposto.CodigoDebito?.Codigo
@@ -143,18 +152,19 @@ private static List<decimal> AplicarMapeamento(
 
 private async Task<Dictionary<string, decimal>> ConstruirMapeamento(
     string userId,
+    int? clienteId,
     Func<Imposto, string?> obterCodigo)
 {
-    var impostos = await GetImpostosCachedAsync(userId);
+    var impostos = await GetImpostosCachedAsync(userId, clienteId);
     return ConstruirMapeamentoDeImpostos(impostos, obterCodigo);
 }
 
-private async Task<IEnumerable<Imposto>> GetImpostosCachedAsync(string userId)
+private async Task<IEnumerable<Imposto>> GetImpostosCachedAsync(string userId, int? clienteId)
 {
-    return await _cache.GetOrCreateAsync(CacheKey(userId), async entry =>
+    return await _cache.GetOrCreateAsync(CacheKey(userId, clienteId), async entry =>
     {
         entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
-        return await _impostoRepository.ObterTodosComCodigosAsync(userId);
+        return await _impostoRepository.ObterTodosComCodigosAsync(userId, clienteId);
     }) ?? Enumerable.Empty<Imposto>();
 }
 
@@ -199,38 +209,4 @@ private static Dictionary<string, decimal> ConstruirMapeamentoDeImpostos(
 
     return mapeamento;
 }
-
-
-    // public async Task<ImpostoDto> AdicionarAsync(ImpostoDto dto, string userId)
-    // {
-    //     // Validar códigos de conta
-    //     if (dto.CodigoDebitoId.HasValue && 
-    //         !await _codigoContaRepository.ExisteAsync(dto.CodigoDebitoId.Value, userId))
-    //     {
-    //         throw new KeyNotFoundException("Código de débito não encontrado");
-    //     }
-
-    //     if (dto.CodigoCreditoId.HasValue && 
-    //         !await _codigoContaRepository.ExisteAsync(dto.CodigoCreditoId.Value, userId))
-    //     {
-    //         throw new KeyNotFoundException("Código de crédito não encontrado");
-    //     }
-
-    //     var imposto = _mapper.Map<Imposto>(dto);
-    //     imposto.UserId = userId;
-
-    //     await _impostoRepository.AdicionarAsync(imposto);
-
-    //     return _mapper.Map<ImpostoDto>(imposto);
-    // }
-
-    // public async Task<bool> RemoverAsync(int id, string userId)
-    // {
-    //     var imposto = await _impostoRepository.ObterPorIdAsync(id, userId);
-    //     if (imposto == null)
-    //         return false;
-
-    //     await _impostoRepository.RemoverAsync(imposto);
-    //     return true;
-    // }
 }

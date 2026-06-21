@@ -20,7 +20,25 @@ public record UploadJobStatus(
     DateTime? CompletedAtUtc = null,
     string? Type = null,
     string? OutputFile = null,
-    JsonElement? Result = null);
+    JsonElement? Result = null,
+    string? ProgressHint = null,
+    string? SessionId = null,
+    string? InputFileName = null,
+    string? MetadataJson = null);
+
+public record UploadJobHistoryItem(
+    string JobId,
+    UploadJobState State,
+    string? FileType,
+    string? InputFileName,
+    string? OutputFile,
+    string? Message,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc,
+    int? ClienteId,
+    string? ClienteNome,
+    string? Cnpj,
+    string SessionId);
 
 public interface IUploadJobService
 {
@@ -30,4 +48,16 @@ public interface IUploadJobService
     Task MarkFailedAsync(string jobId, string message, CancellationToken cancellationToken = default);
     Task<UploadJobStatus?> GetStatusAsync(string jobId, string userId, CancellationToken cancellationToken = default);
     Task<UploadJob?> GetJobEntityAsync(string jobId, CancellationToken cancellationToken = default);
+    Task<(IEnumerable<UploadJobHistoryItem> Items, int Total)> ListHistoryAsync(
+        string userId,
+        int? clienteId,
+        string? tipo,
+        DateTime? from,
+        DateTime? to,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+    Task<UploadJob?> GetJobForDownloadAsync(string jobId, string userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<UploadJob>> ListExpiredJobsAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
+    Task PurgeExpiredJobsAsync(int retentionDays, CancellationToken cancellationToken = default);
 }

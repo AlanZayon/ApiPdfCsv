@@ -71,7 +71,8 @@ public class UploadProcessingJob
                     job.UserId,
                     job.SessionId,
                     metadata?.ProLaboreAno?.ToString(),
-                    metadata?.ProLaboreValor?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    metadata?.ProLaboreValor?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    metadata?.ClienteId);
                 var result = await processPdfUseCase.Execute(command);
 
                 var resultJson = JsonSerializer.Serialize(new
@@ -206,6 +207,9 @@ public class UploadJobMetadata
 {
     public string? Cnpj { get; set; }
     public string? CodigoBanco { get; set; }
+    public int? ClienteId { get; set; }
+    public string? ClienteNome { get; set; }
+    public string? InputOriginalFileName { get; set; }
     public int? ProLaboreAno { get; set; }
     public decimal? ProLaboreValor { get; set; }
 }

@@ -25,7 +25,7 @@ public class ProcessPdfUseCase
     {
         _logger.Info($"Iniciando processamento do PDF: {command.FilePath}");
 
-        var result = await _pdfProcessor.Process(command.FilePath, command.UserId);
+        var result = await _pdfProcessor.Process(command.FilePath, command.UserId, command.ClienteId);
 
         const string outputFile = "PGTO.csv";
 

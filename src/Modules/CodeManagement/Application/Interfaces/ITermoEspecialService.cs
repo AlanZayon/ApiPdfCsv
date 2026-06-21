@@ -12,7 +12,14 @@ namespace ApiPdfCsv.Modules.CodeManagement.Application.Interfaces
             string cnpj,
             int? codigoBanco,
             List<AtualizacaoCodigoDto> atualizacoes);
-        // Task<IEnumerable<TermoEspecialDto>> ObterTodosAsync(string userId);
-        // Task<IEnumerable<TermoEspecialDto>> AtualizarAsyncService(IEnumerable<TermoEspecialDto> termoEspecialDtos, string userId);
+        Task<string> ExportarCsvAsync(string userId, string cnpj, int? codigoBanco);
+        Task<int> ImportarCsvAsync(string userId, string cnpj, int? codigoBanco, Stream csvStream);
+        Task<IEnumerable<TermoEspecialDto>> SugerirAsync(string userId, string cnpj, string termo);
+        Task<int> CopiarMapeamentosAsync(
+            string userId,
+            string cnpjOrigem,
+            string cnpjDestino,
+            int? codigoBancoOrigem,
+            int? codigoBancoDestino);
     }
 }

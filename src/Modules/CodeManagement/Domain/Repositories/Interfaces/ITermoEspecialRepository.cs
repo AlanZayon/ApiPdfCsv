@@ -21,5 +21,7 @@ namespace ApiPdfCsv.Modules.CodeManagement.Domain.Repositories.Interfaces
         Task<TermoEspecial?> BuscarPorTermoUsuarioCnpjEBancoETipoAsync(string termo, string userId, string cnpj, int? codigoBanco, bool tipoValor);
         Task<TermoEspecial?> BuscarPorTermoUsuarioECnpjETipoAsync(string termo, string userId, string cnpj, bool tipoValor);
         Task<bool> SalvarAlteracoesAsync();
+        Task<IEnumerable<TermoEspecial>> SugerirPorTermoAsync(string userId, string cnpj, string termo, int limit = 5);
+        Task<int> CopiarMapeamentosAsync(string userId, string cnpjOrigem, string cnpjDestino, int? codigoBancoOrigem, int? codigoBancoDestino);
     }
 }

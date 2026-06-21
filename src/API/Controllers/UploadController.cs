@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using ApiPdfCsv.Modules.CodeManagement.Application.Interfaces;
 using ApiPdfCsv.Modules.OfxProcessing.Domain.Entities;
 using ApiPdfCsv.Shared.Helpers;
 using ApiPdfCsv.Shared.Validation;
@@ -21,15 +22,18 @@ public class UploadController : ControllerBase
     private readonly ILogger _logger;
     private readonly IBlobStorageService _blobStorage;
     private readonly IUploadJobService _uploadJobService;
+    private readonly IClienteService _clienteService;
 
     public UploadController(
         ILogger logger,
         IBlobStorageService blobStorage,
-        IUploadJobService uploadJobService)
+        IUploadJobService uploadJobService,
+        IClienteService clienteService)
     {
         _logger = logger;
         _blobStorage = blobStorage;
         _uploadJobService = uploadJobService;
+        _clienteService = clienteService;
     }
 
     [HttpGet("status/{jobId}")]
@@ -53,6 +57,7 @@ public class UploadController : ControllerBase
                 status.CreatedAtUtc,
                 status.CompletedAtUtc,
                 status.OutputFile,
+                progressHint = status.ProgressHint,
                 result = status.Result.Value
             });
         }
@@ -64,8 +69,60 @@ public class UploadController : ControllerBase
             status.Message,
             status.CreatedAtUtc,
             status.CompletedAtUtc,
-            status.OutputFile
+            status.OutputFile,
+            progressHint = status.ProgressHint
         });
+    }
+
+    [HttpGet("status/{jobId}/stream")]
+    public async Task GetJobStatusStream(string jobId, CancellationToken cancellationToken)
+    {
+        Response.Headers.Append("Content-Type", "text/event-stream");
+        Response.Headers.Append("Cache-Control", "no-cache");
+        Response.Headers.Append("Connection", "keep-alive");
+
+        var userId = UserSessionHelper.GetUserId(User);
+
+        for (var attempt = 0; attempt < 300 && !cancellationToken.IsCancellationRequested; attempt++)
+        {
+            var status = await _uploadJobService.GetStatusAsync(jobId, userId, cancellationToken);
+            if (status == null)
+            {
+                await WriteSseEventAsync("error", new { message = "Job não encontrado." }, cancellationToken);
+                break;
+            }
+
+            await WriteSseEventAsync("status", new
+            {
+                jobId = status.JobId,
+                state = status.State.ToString(),
+                status.Message,
+                status.OutputFile,
+                progressHint = status.ProgressHint
+            }, cancellationToken);
+
+            if (status.State is UploadJobState.Completed or UploadJobState.Failed)
+                break;
+
+            await Task.Delay(1000, cancellationToken);
+        }
+    }
+
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory(
+        [FromQuery] int? clienteId,
+        [FromQuery] string? tipo,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = UserSessionHelper.GetUserId(User);
+        var (items, total) = await _uploadJobService.ListHistoryAsync(
+            userId, clienteId, tipo, from, to, page, pageSize, cancellationToken);
+
+        return Ok(new { items, total, page, pageSize });
     }
 
     [HttpPost("upload")]
@@ -79,13 +136,15 @@ public class UploadController : ControllerBase
         }
 
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var cnpj = Request.Headers["CNPJ"].ToString() ?? string.Empty;
-        var codigoBanco = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
+        var cnpjHeader = Request.Headers["CNPJ"].ToString() ?? string.Empty;
+        var codigoBancoHeader = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
+        var clienteIdHeader = Request.Headers["ClienteId"].ToString();
+        int? clienteId = int.TryParse(clienteIdHeader, out var parsedClienteId) ? parsedClienteId : null;
         var proLaboreAno = Request.Headers["ProLabore-Ano"].ToString();
         var proLaboreValor = Request.Headers["ProLabore-Valor"].ToString();
 
         var userId = UserSessionHelper.GetUserId(User);
-        var userSessionId = UserSessionHelper.ResolveSessionId(HttpContext);
+        var jobSessionId = UserSessionHelper.CreateJobSessionId();
 
         try
         {
@@ -93,7 +152,27 @@ public class UploadController : ControllerBase
 
             if (extension == ".ofx")
             {
-                UploadFileValidator.ValidateCnpj(cnpj);
+                var resolved = await _clienteService.ResolverParaUploadAsync(
+                    userId, clienteId, cnpjHeader, codigoBancoHeader, cancellationToken);
+
+                if (resolved == null)
+                {
+                    return BadRequest(new { message = "CNPJ ou ClienteId é obrigatório para arquivos OFX." });
+                }
+
+                cnpjHeader = resolved.Value.Cnpj;
+                codigoBancoHeader = resolved.Value.CodigoBanco?.ToString() ?? codigoBancoHeader;
+                UploadFileValidator.ValidateCnpj(cnpjHeader);
+            }
+            else if (extension == ".pdf" && clienteId.HasValue)
+            {
+                var resolved = await _clienteService.ResolverParaUploadAsync(
+                    userId, clienteId, cnpjHeader, codigoBancoHeader, cancellationToken);
+
+                if (resolved != null)
+                {
+                    cnpjHeader = resolved.Value.Cnpj;
+                }
             }
 
             if (extension is not (".pdf" or ".ofx"))
@@ -107,7 +186,7 @@ public class UploadController : ControllerBase
             {
                 await _blobStorage.SaveAsync(
                     userId,
-                    userSessionId,
+                    jobSessionId,
                     inputFileName,
                     uploadStream,
                     BlobScope.Upload,
@@ -115,7 +194,7 @@ public class UploadController : ControllerBase
             }
 
             await using (var validationStream = await _blobStorage.OpenReadAsync(
-                userId, userSessionId, inputFileName, BlobScope.Upload, cancellationToken))
+                userId, jobSessionId, inputFileName, BlobScope.Upload, cancellationToken))
             {
                 var tempPath = Path.GetTempFileName();
                 try
@@ -136,16 +215,26 @@ public class UploadController : ControllerBase
                 }
             }
 
+            string? clienteNome = null;
+            if (clienteId.HasValue)
+            {
+                var cliente = await _clienteService.ObterPorIdAsync(clienteId.Value, userId, cancellationToken);
+                clienteNome = cliente?.RazaoSocial;
+            }
+
             var metadata = new UploadJobMetadata
             {
-                Cnpj = cnpj,
-                CodigoBanco = codigoBanco,
+                Cnpj = cnpjHeader,
+                CodigoBanco = codigoBancoHeader,
+                ClienteId = clienteId,
+                ClienteNome = clienteNome,
+                InputOriginalFileName = file.FileName,
                 ProLaboreAno = int.TryParse(proLaboreAno, out var ano) ? ano : null,
                 ProLaboreValor = decimal.TryParse(proLaboreValor, out var valor) ? valor : null
             };
 
             var jobId = await _uploadJobService.CreateJobAsync(userId, new CreateUploadJobRequest(
-                userSessionId,
+                jobSessionId,
                 "upload",
                 extension.TrimStart('.'),
                 inputFileName,
@@ -198,5 +287,13 @@ public class UploadController : ControllerBase
             state = UploadJobState.Processing.ToString(),
             message = "Finalização enfileirada para processamento."
         });
+    }
+
+    private async Task WriteSseEventAsync(string eventName, object data, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(data);
+        await Response.WriteAsync($"event: {eventName}\n", cancellationToken);
+        await Response.WriteAsync($"data: {json}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
     }
 }

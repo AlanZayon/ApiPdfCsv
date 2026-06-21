@@ -6,6 +6,8 @@ public class StorageOptions
 
     public string Provider { get; set; } = "Local";
 
+    public int RetentionDays { get; set; } = 7;
+
     public S3StorageOptions S3 { get; set; } = new();
 }
 

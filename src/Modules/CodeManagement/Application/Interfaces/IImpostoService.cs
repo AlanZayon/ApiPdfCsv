@@ -6,13 +6,14 @@ namespace ApiPdfCsv.Modules.CodeManagement.Application.Interfaces
 {
     public interface IImpostoService
     {
-        Task<ImpostoDto?> ObterPorIdAsync(int id, string userId);
-        Task<IEnumerable<ImpostoDto>> ObterTodosAsync(string userId);
-        // Task<ImpostoDto> AdicionarAsync(ImpostoDto dto, string userId);
-        Task<IEnumerable<ImpostoDto>> AtualizarAsyncService(IEnumerable<ImpostoDto> impostos, string userId);
-        // Task<bool> RemoverAsync(int id, string userId);
-        Task<List<decimal>> MapearDebito(List<string> historico, string userId);
-        Task<List<decimal>> MapearCredito(List<string> historico, string userId);
-        Task<(List<decimal> Debitos, List<decimal> Creditos)> MapearDebitoECredito(List<string> historico, string userId);
+        Task<ImpostoDto?> ObterPorIdAsync(int id, string userId, int? clienteId = null);
+        Task<IEnumerable<ImpostoDto>> ObterTodosAsync(string userId, int? clienteId = null);
+        Task<IEnumerable<ImpostoDto>> AtualizarAsyncService(IEnumerable<ImpostoDto> impostos, string userId, int? clienteId = null);
+        Task<List<decimal>> MapearDebito(List<string> historico, string userId, int? clienteId = null);
+        Task<List<decimal>> MapearCredito(List<string> historico, string userId, int? clienteId = null);
+        Task<(List<decimal> Debitos, List<decimal> Creditos)> MapearDebitoECredito(
+            List<string> historico,
+            string userId,
+            int? clienteId = null);
     }
 }

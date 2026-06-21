@@ -15,6 +15,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<CodigoConta> CodigoConta { get; set; }
     public DbSet<Imposto> Imposto { get; set; }
     public DbSet<TermoEspecial> TermoEspecial { get; set; }
+    public DbSet<Cliente> Clientes { get; set; }
     public DbSet<ApiPdfCsv.Shared.Processing.UploadJob> UploadJobs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -30,6 +31,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.CodigoDebitoId).HasColumnName("codigodebitoid");
             entity.Property(e => e.CodigoCreditoId).HasColumnName("codigocreditoid");
             entity.Property(e => e.UserId).HasColumnName("userid");
+            entity.Property(e => e.ClienteId).HasColumnName("clienteid");
+
+            entity.HasOne(i => i.Cliente)
+                .WithMany()
+                .HasForeignKey(i => i.ClienteId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(i => i.CodigoDebito)
                 .WithMany()
@@ -109,6 +116,23 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.ResultJson).HasColumnType("jsonb");
             entity.Property(e => e.MetadataJson).HasColumnType("jsonb");
             entity.HasIndex(e => new { e.UserId, e.Id }).HasDatabaseName("IX_UploadJobs_User_Job");
+        });
+
+        builder.Entity<Cliente>(entity =>
+        {
+            entity.ToTable("Clientes");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("userid").HasMaxLength(450).IsRequired();
+            entity.Property(e => e.Cnpj).HasColumnName("cnpj").HasMaxLength(14).IsRequired();
+            entity.Property(e => e.RazaoSocial).HasColumnName("razaosocial").HasMaxLength(256).IsRequired();
+            entity.Property(e => e.CodigoBancoPadrao).HasColumnName("codigobancopadrao");
+            entity.Property(e => e.Ativo).HasColumnName("ativo").HasDefaultValue(true);
+            entity.Property(e => e.CreatedAtUtc).HasColumnName("createdatutc");
+
+            entity.HasIndex(e => new { e.UserId, e.Cnpj })
+                .IsUnique()
+                .HasDatabaseName("IX_Clientes_User_Cnpj");
         });
     }
 }

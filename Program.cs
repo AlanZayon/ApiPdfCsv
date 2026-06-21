@@ -9,6 +9,7 @@ using ApiPdfCsv.CrossCutting.Data;
 using ApiPdfCsv.CrossCutting.Identity.Configurations;
 using ApiPdfCsv.Shared.Extensions;
 using ApiPdfCsv.Shared.Middleware;
+using ApiPdfCsv.Shared.Processing;
 using ApiPdfCsv.Shared.Storage;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -93,6 +94,15 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddMemoryCache();
 
+var redisConnection = builder.Configuration["Redis:ConnectionString"];
+if (!string.IsNullOrWhiteSpace(redisConnection))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnection;
+    });
+}
+
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
@@ -114,7 +124,10 @@ if (!string.IsNullOrWhiteSpace(connStr))
 {
     builder.Services.AddHangfire(config =>
         config.UsePostgreSqlStorage(options => options.UseNpgsqlConnection(connStr)));
-    builder.Services.AddHangfireServer();
+    builder.Services.AddHangfireServer(options =>
+    {
+        options.WorkerCount = builder.Configuration.GetValue("Hangfire:WorkerCount", Environment.ProcessorCount);
+    });
 }
 
 var healthChecksBuilder = builder.Services.AddHealthChecks();
@@ -197,6 +210,13 @@ if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 if (!Directory.Exists(uploadDir)) Directory.CreateDirectory(uploadDir);
 
 app.MapControllers();
+
+var storageOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>().Value;
+if (!string.IsNullOrWhiteSpace(connStr))
+{
+    JobsRetentionJob.RegisterRecurring(Math.Max(1, storageOptions.RetentionDays));
+}
+
 app.Run();
 
 public partial class Program { }

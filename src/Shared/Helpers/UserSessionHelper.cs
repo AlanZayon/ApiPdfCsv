@@ -34,4 +34,11 @@ public static class UserSessionHelper
 
         return sessionId;
     }
+
+    /// <summary>
+    /// Gera um identificador exclusivo de pasta por job de upload,
+    /// evitando colisão de arquivos quando vários uploads correm em paralelo.
+    /// </summary>
+    public static string CreateJobSessionId()
+        => Guid.NewGuid().ToString("N");
 }
