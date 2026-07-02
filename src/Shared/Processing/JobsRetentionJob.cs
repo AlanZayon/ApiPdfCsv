@@ -29,9 +29,9 @@ public class JobsRetentionJob
         await jobService.PurgeExpiredJobsAsync(retentionDays, cancellationToken);
     }
 
-    public static void RegisterRecurring(int retentionDays)
+    public static void RegisterRecurring(IRecurringJobManager recurringJobs, int retentionDays)
     {
-        RecurringJob.AddOrUpdate<JobsRetentionJob>(
+        recurringJobs.AddOrUpdate<JobsRetentionJob>(
             "purge-expired-jobs",
             job => job.PurgeExpiredAsync(retentionDays, CancellationToken.None),
             Cron.Weekly);

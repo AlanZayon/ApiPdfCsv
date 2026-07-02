@@ -214,7 +214,8 @@ app.MapControllers();
 var storageOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>().Value;
 if (!string.IsNullOrWhiteSpace(connStr))
 {
-    JobsRetentionJob.RegisterRecurring(Math.Max(1, storageOptions.RetentionDays));
+    var recurringJobs = app.Services.GetRequiredService<IRecurringJobManager>();
+    JobsRetentionJob.RegisterRecurring(recurringJobs, Math.Max(1, storageOptions.RetentionDays));
 }
 
 app.Run();
