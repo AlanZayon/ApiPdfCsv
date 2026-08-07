@@ -8,9 +8,25 @@ namespace ApiPdfCsv.Shared.Utils;
 
 public static class PdfUtils
 {
-    public static string ExtrairHistorico(string linha)
+    /// <summary>
+    /// Converte data dd/MM/yyyy do Período de Apuração em sufixo MM/yyyy para o histórico.
+    /// </summary>
+    public static string FormatPeriodoMesAno(string? periodoApuracao)
+    {
+        if (string.IsNullOrWhiteSpace(periodoApuracao))
+            return "XX";
+
+        var match = Regex.Match(periodoApuracao.Trim(), @"(\d{2})/(\d{2})/(\d{4})");
+        if (!match.Success)
+            return "XX";
+
+        return $"{match.Groups[2].Value}/{match.Groups[3].Value}";
+    }
+
+    public static string ExtrairHistorico(string linha, string? periodoApuracao = null)
     {
         var linhaMaiuscula = linha.ToUpper();
+        var sufixo = FormatPeriodoMesAno(periodoApuracao);
 
         var termosComuns = new List<string>
         {
@@ -89,7 +105,7 @@ public static class PdfUtils
         }
 
         if (string.IsNullOrEmpty(termoVencedor))
-            return "PG. DESCONHECIDO XX";
+            return $"PG. DESCONHECIDO {sufixo}";
 
         var historico = termosEspeciais.ContainsKey(termoVencedor) ? termosEspeciais[termoVencedor] : termoVencedor;
 
@@ -101,7 +117,7 @@ public static class PdfUtils
             historico += " PARCELAMENTO";
         }
 
-        return $"PG. {historico} XX";
+        return $"PG. {historico} {sufixo}";
     }
 
     public static List<decimal> MapearDebito(List<string> historico)

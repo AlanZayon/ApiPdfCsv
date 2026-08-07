@@ -16,6 +16,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Imposto> Imposto { get; set; }
     public DbSet<TermoEspecial> TermoEspecial { get; set; }
     public DbSet<Cliente> Clientes { get; set; }
+    public DbSet<PerfilPlanoContas> PerfisPlanoContas { get; set; }
     public DbSet<ApiPdfCsv.Shared.Processing.UploadJob> UploadJobs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -31,11 +32,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.CodigoDebitoId).HasColumnName("codigodebitoid");
             entity.Property(e => e.CodigoCreditoId).HasColumnName("codigocreditoid");
             entity.Property(e => e.UserId).HasColumnName("userid");
-            entity.Property(e => e.ClienteId).HasColumnName("clienteid");
+            entity.Property(e => e.PerfilId).HasColumnName("perfilid");
 
-            entity.HasOne(i => i.Cliente)
+            entity.HasOne(i => i.Perfil)
                 .WithMany()
-                .HasForeignKey(i => i.ClienteId)
+                .HasForeignKey(i => i.PerfilId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(i => i.CodigoDebito)
@@ -47,6 +48,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany()
                 .HasForeignKey(i => i.CodigoCreditoId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<PerfilPlanoContas>(entity =>
+        {
+            entity.ToTable("PerfisPlanoContas");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("userid").HasMaxLength(450).IsRequired();
+            entity.Property(e => e.Nome).HasColumnName("nome").HasMaxLength(128).IsRequired();
+            entity.Property(e => e.IsDefault).HasColumnName("isdefault");
+            entity.Property(e => e.CodigoGenericoEntrada).HasColumnName("codigogenericoentrada").HasMaxLength(32);
+            entity.Property(e => e.CodigoGenericoSaida).HasColumnName("codigogenericosaida").HasMaxLength(32);
+            entity.Property(e => e.CreatedAtUtc).HasColumnName("createdatutc");
+            entity.HasIndex(e => new { e.UserId, e.Nome }).HasDatabaseName("IX_PerfisPlanoContas_User_Nome");
         });
 
         builder.Entity<CodigoConta>(entity =>

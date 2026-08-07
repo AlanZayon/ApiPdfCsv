@@ -138,8 +138,8 @@ public class UploadController : ControllerBase
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var cnpjHeader = Request.Headers["CNPJ"].ToString() ?? string.Empty;
         var codigoBancoHeader = Request.Headers["CodigoBanco"].ToString() ?? string.Empty;
-        var clienteIdHeader = Request.Headers["ClienteId"].ToString();
-        int? clienteId = int.TryParse(clienteIdHeader, out var parsedClienteId) ? parsedClienteId : null;
+        var perfilIdHeader = Request.Headers["PerfilId"].ToString();
+        int? perfilId = int.TryParse(perfilIdHeader, out var parsedPerfilId) ? parsedPerfilId : null;
         var proLaboreAno = Request.Headers["ProLabore-Ano"].ToString();
         var proLaboreValor = Request.Headers["ProLabore-Valor"].ToString();
 
@@ -153,26 +153,16 @@ public class UploadController : ControllerBase
             if (extension == ".ofx")
             {
                 var resolved = await _clienteService.ResolverParaUploadAsync(
-                    userId, clienteId, cnpjHeader, codigoBancoHeader, cancellationToken);
+                    userId, null, cnpjHeader, codigoBancoHeader, cancellationToken);
 
                 if (resolved == null)
                 {
-                    return BadRequest(new { message = "CNPJ ou ClienteId é obrigatório para arquivos OFX." });
+                    return BadRequest(new { message = "CNPJ é obrigatório para arquivos OFX." });
                 }
 
                 cnpjHeader = resolved.Value.Cnpj;
                 codigoBancoHeader = resolved.Value.CodigoBanco?.ToString() ?? codigoBancoHeader;
                 UploadFileValidator.ValidateCnpj(cnpjHeader);
-            }
-            else if (extension == ".pdf" && clienteId.HasValue)
-            {
-                var resolved = await _clienteService.ResolverParaUploadAsync(
-                    userId, clienteId, cnpjHeader, codigoBancoHeader, cancellationToken);
-
-                if (resolved != null)
-                {
-                    cnpjHeader = resolved.Value.Cnpj;
-                }
             }
 
             if (extension is not (".pdf" or ".ofx"))
@@ -215,19 +205,11 @@ public class UploadController : ControllerBase
                 }
             }
 
-            string? clienteNome = null;
-            if (clienteId.HasValue)
-            {
-                var cliente = await _clienteService.ObterPorIdAsync(clienteId.Value, userId, cancellationToken);
-                clienteNome = cliente?.RazaoSocial;
-            }
-
             var metadata = new UploadJobMetadata
             {
                 Cnpj = cnpjHeader,
                 CodigoBanco = codigoBancoHeader,
-                ClienteId = clienteId,
-                ClienteNome = clienteNome,
+                PerfilId = perfilId,
                 InputOriginalFileName = file.FileName,
                 ProLaboreAno = int.TryParse(proLaboreAno, out var ano) ? ano : null,
                 ProLaboreValor = decimal.TryParse(proLaboreValor, out var valor) ? valor : null

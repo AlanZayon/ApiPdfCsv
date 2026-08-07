@@ -7,26 +7,26 @@ public class ProcessPdfCommand
     public string UserSessionId { get; }
     public int? ProLaboreAno { get; }
     public decimal? ProLaboreValor { get; }
-    public int? ClienteId { get; }
+    public int? PerfilId { get; }
 
     public ProcessPdfCommand(
-        string filePath, 
-        string userId, 
+        string filePath,
+        string userId,
         string userSessionId,
         string? proLaboreAno = null,
         string? proLaboreValor = null,
-        int? clienteId = null)
+        int? perfilId = null)
     {
         FilePath = filePath;
         UserId = userId;
         UserSessionId = userSessionId;
-        ClienteId = clienteId;
-        
+        PerfilId = perfilId;
+
         if (!string.IsNullOrEmpty(proLaboreAno) && int.TryParse(proLaboreAno, out var ano))
         {
             ProLaboreAno = ano;
         }
-        
+
         if (!string.IsNullOrEmpty(proLaboreValor) && decimal.TryParse(proLaboreValor, out var valor))
         {
             ProLaboreValor = valor;

@@ -4,6 +4,8 @@ namespace ApiPdfCsv.Modules.PdfProcessing.Domain.Entities;
 public class ComprovanteData
 {
     public string DataArrecadacao { get; set; } = string.Empty;
+    /// <summary>Data do Período de Apuração no PDF (dd/MM/yyyy).</summary>
+    public string PeriodoApuracao { get; set; } = string.Empty;
     public List<decimal> Debito { get; set; } = new();
     public List<decimal> Credito { get; set; } = new();
     public List<decimal> Total { get; set; } = new();
@@ -14,6 +16,7 @@ public class ComprovanteData
     public ComprovanteData(ComprovanteData other)
     {
         DataArrecadacao = other.DataArrecadacao;
+        PeriodoApuracao = other.PeriodoApuracao;
         Debito = new List<decimal>(other.Debito);
         Credito = new List<decimal>(other.Credito);
         Total = new List<decimal>(other.Total);

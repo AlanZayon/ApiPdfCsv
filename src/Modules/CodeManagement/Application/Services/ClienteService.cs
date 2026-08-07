@@ -10,16 +10,13 @@ namespace ApiPdfCsv.Modules.CodeManagement.Application.Services;
 public class ClienteService : IClienteService
 {
     private readonly IClienteRepository _clienteRepository;
-    private readonly IImpostoRepository _impostoRepository;
     private readonly IMapper _mapper;
 
     public ClienteService(
         IClienteRepository clienteRepository,
-        IImpostoRepository impostoRepository,
         IMapper mapper)
     {
         _clienteRepository = clienteRepository;
-        _impostoRepository = impostoRepository;
         _mapper = mapper;
     }
 
@@ -70,8 +67,6 @@ public class ClienteService : IClienteService
         };
 
         var criado = await _clienteRepository.CriarAsync(cliente, cancellationToken);
-        await CopiarImpostosPadraoParaClienteAsync(userId, criado.Id, cancellationToken);
-
         return _mapper.Map<ClienteDto>(criado);
     }
 
@@ -140,20 +135,6 @@ public class ClienteService : IClienteService
         }
 
         return (cnpj, codigoBanco, null);
-    }
-
-    private async Task CopiarImpostosPadraoParaClienteAsync(
-        string userId,
-        int clienteId,
-        CancellationToken cancellationToken)
-    {
-        var padrao = (await _impostoRepository.ObterTodosComCodigosAsync(userId, null, cancellationToken))
-            .Where(i => i != null)
-            .ToList();
-
-        if (padrao.Count == 0) return;
-
-        await _impostoRepository.CopiarImpostosParaClienteAsync(userId, clienteId, padrao!, cancellationToken);
     }
 
     private static string NormalizarCnpj(string cnpj)

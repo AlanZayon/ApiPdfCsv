@@ -84,11 +84,13 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ICodigoContaRepository, CodigoContaRepository>();
         services.AddScoped<IImpostoRepository, ImpostoRepository>();
+        services.AddScoped<IPerfilPlanoContasRepository, PerfilPlanoContasRepository>();
         services.AddScoped<IClienteRepository, ClienteRepository>();
         services.AddScoped<ITermoEspecialRepository, TermoEspecialRepository>();
         services.AddScoped<ITermoEspecialService, TermoEspecialService>();
         services.AddScoped<ICodigoContaService, CodigoContaService>();
         services.AddScoped<IImpostoService, ImpostoService>();
+        services.AddScoped<IPerfilPlanoContasService, PerfilPlanoContasService>();
         services.AddScoped<IClienteService, ClienteService>();
         return services;
     }

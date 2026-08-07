@@ -19,7 +19,7 @@ public class PdfProcessorService : IPdfProcessorService
 {
     private readonly ILogger _logger;
     private readonly IImpostoService _impostoService;
-    private int? _clienteId;
+    private int? _perfilId;
 
     public PdfProcessorService(ILogger logger, IImpostoService impostoService)
     {
@@ -27,9 +27,9 @@ public class PdfProcessorService : IPdfProcessorService
         _logger = logger;
     }
 
-    public async Task<ProcessedPdfData> Process(string filePath, string userId, int? clienteId = null)
+    public async Task<ProcessedPdfData> Process(string filePath, string userId, int? perfilId = null)
     {
-        _clienteId = clienteId;
+        _perfilId = perfilId;
         _logger.Info($"Processing PDF file: {filePath}");
         
         var current = InitializeCurrent();
@@ -50,6 +50,8 @@ public class PdfProcessorService : IPdfProcessorService
             for (var i = 0; i < lines.Count; i++)
             {
                 var line = lines[i];
+
+                TryExtractPeriodoApuracao(current, line, lines, i);
 
                 if (line.Contains("Agência Estabelecimento Valor Reservado/Restituído Referência"))
                 {
@@ -83,7 +85,7 @@ public class PdfProcessorService : IPdfProcessorService
                     }
                     else if (Regex.IsMatch(line, @"^\d{4}(?=.*[A-Za-z]).*\d{1,3},\d{2}$"))
                     {
-                        ProcessarLinhaPagamento(line, descricoes, totais);
+                        ProcessarLinhaPagamento(line, descricoes, totais, current.PeriodoApuracao);
                     }
                 }
             }
@@ -105,11 +107,57 @@ public class PdfProcessorService : IPdfProcessorService
         return new ComprovanteData
         {
             DataArrecadacao = string.Empty,
+            PeriodoApuracao = string.Empty,
             Debito = new List<decimal>(),
             Credito = new List<decimal>(),
             Total = new List<decimal>(),
             Descricoes = new List<string>()
         };
+    }
+
+    /// <summary>
+    /// No DARF RFB, a linha com datas fica tipicamente como
+    /// "dd/MM/yyyy dd/MM/yyyy &lt;numero&gt;" (Período Apuração + Data de Vencimento).
+    /// O rótulo "Período Apuração" pode aparecer depois das datas na ordem de leitura.
+    /// </summary>
+    private static void TryExtractPeriodoApuracao(
+        ComprovanteData current,
+        string line,
+        IReadOnlyList<string> lines,
+        int index)
+    {
+        if (!string.IsNullOrEmpty(current.PeriodoApuracao))
+            return;
+
+        if (line.Contains("Período Apuração", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Periodo Apuracao", StringComparison.OrdinalIgnoreCase))
+        {
+            for (var j = index - 1; j >= System.Math.Max(0, index - 5); j--)
+            {
+                if (TryParsePeriodoApuracaoFromLine(lines[j], out var periodo))
+                {
+                    current.PeriodoApuracao = periodo;
+                    return;
+                }
+            }
+        }
+
+        if (TryParsePeriodoApuracaoFromLine(line, out var fromLine))
+            current.PeriodoApuracao = fromLine;
+    }
+
+    private static bool TryParsePeriodoApuracaoFromLine(string line, out string periodo)
+    {
+        periodo = string.Empty;
+        var matches = Regex.Matches(line, @"\d{2}/\d{2}/\d{4}");
+        // Linha típica: período + vencimento (+ número do documento). A primeira data é o período.
+        if (matches.Count >= 2)
+        {
+            periodo = matches[0].Value;
+            return true;
+        }
+
+        return false;
     }
 
     private static void TryExtractDataArrecadacao(ComprovanteData current, IReadOnlyList<string> lines, int index)
@@ -164,13 +212,17 @@ public class PdfProcessorService : IPdfProcessorService
         }
     }
 
-    private static void ProcessarLinhaPagamento(string line, List<string> descricoes, List<decimal> totais)
+    private static void ProcessarLinhaPagamento(
+        string line,
+        List<string> descricoes,
+        List<decimal> totais,
+        string periodoApuracao)
     {
         var valoresHistorico = PdfUtils.ParseLinhaHistorico(line);
         if (valoresHistorico == null) return;
 
         totais.Add(valoresHistorico.Principal);
-        var historico = PdfUtils.ExtrairHistorico(line);
+        var historico = PdfUtils.ExtrairHistorico(line, periodoApuracao);
         descricoes.Add(historico);
     }
 
@@ -181,7 +233,7 @@ public class PdfProcessorService : IPdfProcessorService
             new List<decimal>(totais)
         );
 
-        var (debitosMapeados, creditosMapeados) = await _impostoService.MapearDebitoECredito(descricoesAgrupadas, userId, _clienteId);
+        var (debitosMapeados, creditosMapeados) = await _impostoService.MapearDebitoECredito(descricoesAgrupadas, userId, _perfilId);
         debitos.AddRange(debitosMapeados);
         creditos.AddRange(creditosMapeados);
 
@@ -209,13 +261,13 @@ public class PdfProcessorService : IPdfProcessorService
         var parsedValues = PdfUtils.ParseTotaisLinha(totalLineTrim);
         if (parsedValues?.SomaMultaJuros == null) return;
 
-        const string multaDescricao = "PG. MULTA E JUROS XX";
-        
+        var multaDescricao = $"PG. MULTA E JUROS {PdfUtils.FormatPeriodoMesAno(current.PeriodoApuracao)}";
+
         current.Descricoes.Add(multaDescricao);
         var (debitosMulta, creditosMulta) = await _impostoService.MapearDebitoECredito(
             new List<string> { multaDescricao },
             userId,
-            _clienteId
+            _perfilId
         );
         current.Debito.AddRange(debitosMulta);
         current.Credito.AddRange(creditosMulta);

@@ -81,6 +81,16 @@ public class AuthService : IAuthService
 
             await _dbContext.SaveChangesAsync();
 
+            var perfilPadrao = new PerfilPlanoContas
+            {
+                UserId = user.Id,
+                Nome = "Padrão",
+                IsDefault = true,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _dbContext.PerfisPlanoContas.Add(perfilPadrao);
+            await _dbContext.SaveChangesAsync();
+
             var impostosPadrao = await _dbContext.Imposto
                 .Where(i => i.UserId == null)
                 .ToListAsync();
@@ -104,6 +114,7 @@ public class AuthService : IAuthService
                 {
                     Nome = imposto.Nome,
                     UserId = user.Id,
+                    PerfilId = perfilPadrao.Id,
                     CodigoDebitoId = codigoDebitoUsuario?.Id,
                     CodigoCreditoId = codigoCreditoUsuario?.Id
                 };

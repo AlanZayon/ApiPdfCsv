@@ -33,21 +33,81 @@ public class ConfiguracaoController : ControllerBase
 
     #region Impostos
     [HttpGet("impostos")]
-    public async Task<IActionResult> ObterImpostos([FromQuery] int? clienteId)
+    public async Task<IActionResult> ObterImpostos([FromQuery] int? perfilId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var impostos = await _impostoService.ObterTodosAsync(userId ?? string.Empty, clienteId);
+        var impostos = await _impostoService.ObterTodosAsync(userId ?? string.Empty, perfilId);
         return Ok(impostos);
     }
 
     [HttpPut("impostos")]
     public async Task<IActionResult> AtualizarImpostos(
         [FromBody] IEnumerable<ImpostoDto> impostos,
-        [FromQuery] int? clienteId)
+        [FromQuery] int? perfilId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var resultado = await _impostoService.AtualizarAsyncService(impostos, userId ?? string.Empty, clienteId);
+        var resultado = await _impostoService.AtualizarAsyncService(impostos, userId ?? string.Empty, perfilId);
         return Ok(resultado);
+    }
+    #endregion
+
+    #region Perfis Plano de Contas
+    [HttpGet("perfis")]
+    public async Task<IActionResult> ListarPerfis([FromServices] IPerfilPlanoContasService perfilService)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        return Ok(await perfilService.ListarAsync(userId));
+    }
+
+    [HttpGet("perfis/{id:int}")]
+    public async Task<IActionResult> ObterPerfil(int id, [FromServices] IPerfilPlanoContasService perfilService)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var perfil = await perfilService.ObterAsync(id, userId);
+        return perfil == null ? NotFound() : Ok(perfil);
+    }
+
+    [HttpPost("perfis")]
+    public async Task<IActionResult> CriarPerfil(
+        [FromBody] CriarPerfilRequest request,
+        [FromServices] IPerfilPlanoContasService perfilService)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        try
+        {
+            var criado = await perfilService.CriarAsync(userId, request);
+            return Ok(criado);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPut("perfis/{id:int}")]
+    public async Task<IActionResult> AtualizarPerfil(
+        int id,
+        [FromBody] AtualizarPerfilRequest request,
+        [FromServices] IPerfilPlanoContasService perfilService)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var atualizado = await perfilService.AtualizarAsync(id, userId, request);
+        return atualizado == null ? NotFound() : Ok(atualizado);
+    }
+
+    [HttpDelete("perfis/{id:int}")]
+    public async Task<IActionResult> RemoverPerfil(int id, [FromServices] IPerfilPlanoContasService perfilService)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        try
+        {
+            var ok = await perfilService.RemoverAsync(id, userId);
+            return ok ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
     #endregion
 

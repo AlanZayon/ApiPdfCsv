@@ -6,6 +6,7 @@ using ApiPdfCsv.Shared.Logging;
 using ApiPdfCsv.Shared.Processing;
 using ApiPdfCsv.Shared.Storage;
 using ILogger = ApiPdfCsv.Shared.Logging.ILogger;
+using System.Linq;
 
 namespace ApiPdfCsv.API.Controllers;
 
@@ -80,6 +81,81 @@ public class DownloadController : ControllerBase
             _logger.Error($"Erro ao realizar download por job: {ex.Message}", ex);
             return StatusCode(500, new { message = "Erro ao realizar download." });
         }
+    }
+
+    public class MergeDownloadRequest
+    {
+        public List<string> JobIds { get; set; } = new();
+    }
+
+    [HttpPost("merge")]
+    public async Task<IActionResult> MergeDownloads(
+        [FromBody] MergeDownloadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (request.JobIds == null || request.JobIds.Count == 0)
+                return BadRequest(new { message = "Informe ao menos um jobId." });
+
+            var userId = UserSessionHelper.GetUserId(User);
+            var lines = new List<(DateTime? Date, string Line)>();
+
+            foreach (var jobId in request.JobIds.Distinct())
+            {
+                var job = await _uploadJobService.GetJobForDownloadAsync(jobId, userId, cancellationToken);
+                if (job == null || string.IsNullOrWhiteSpace(job.OutputFile))
+                    continue;
+
+                await using var stream = await _blobStorage.OpenReadAsync(
+                    userId, job.SessionId, job.OutputFile, BlobScope.Output, cancellationToken);
+                using var reader = new StreamReader(stream);
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync(cancellationToken);
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    lines.Add((TryParseDominioDate(line), line.TrimEnd()));
+                }
+            }
+
+            if (lines.Count == 0)
+                return NotFound(new { message = "Nenhum lançamento encontrado para mesclar." });
+
+            var ordered = lines
+                .OrderBy(l => l.Date ?? DateTime.MaxValue)
+                .ThenBy(l => l.Line)
+                .Select(l => l.Line);
+
+            var content = string.Join("\n", ordered) + "\n";
+            var bytes = System.Text.Encoding.UTF8.GetPreamble()
+                .Concat(System.Text.Encoding.UTF8.GetBytes(content))
+                .ToArray();
+
+            _logger.Info($"Merge de {request.JobIds.Count} jobs gerou {lines.Count} linhas para usuário {userId}");
+            return File(bytes, "text/csv", "LANCAMENTOS.csv");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Erro ao mesclar downloads: {ex.Message}", ex);
+            return StatusCode(500, new { message = "Erro ao mesclar arquivos." });
+        }
+    }
+
+    private static DateTime? TryParseDominioDate(string line)
+    {
+        var parts = line.Split(',');
+        if (parts.Length < 2) return null;
+        var raw = parts[1].Trim().Trim('"');
+        if (raw.Length == 8 && raw.All(char.IsDigit)
+            && DateTime.TryParseExact(raw, "ddMMyyyy",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var digitos))
+            return digitos;
+        if (DateTime.TryParseExact(raw, "dd/MM/yyyy",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var br))
+            return br;
+        return null;
     }
 
     private async Task<IActionResult> StreamDownloadAsync(

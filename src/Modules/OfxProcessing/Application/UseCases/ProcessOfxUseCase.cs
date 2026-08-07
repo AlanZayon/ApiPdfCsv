@@ -261,7 +261,8 @@ public class ProcessOfxUseCase
         List<Transacao> transacoesPendentes,
         string userId,
         string cnpj,
-        string userSessionId)
+        string userSessionId,
+        FinalizacaoDateFilter? dateFilter = null)
     {
         await ProcessarESalvarClassificacoes(classificacoes, userId, cnpj);
 
@@ -282,10 +283,14 @@ public class ProcessOfxUseCase
             todasTransacoes = ConverterClassificacoesParaExcel(classificacoesAtualizadas);
         }
 
+        todasTransacoes = FiltrarPorPeriodo(todasTransacoes, dateFilter);
+
         if (todasTransacoes.Count == 0)
         {
             throw new InvalidDataException(
-                "Nenhuma transação classificada para gerar o CSV. Verifique se todas as descrições foram classificadas.");
+                dateFilter?.IsActive == true
+                    ? "Nenhuma transação no período informado para gerar o CSV."
+                    : "Nenhuma transação classificada para gerar o CSV. Verifique se todas as descrições foram classificadas.");
         }
 
         await SaveOfxCsvFromExcelDataAsync(todasTransacoes, userId, userSessionId);
@@ -294,6 +299,66 @@ public class ProcessOfxUseCase
             "Processamento finalizado com sucesso",
             "EXTRATO.csv"
         );
+    }
+
+    private static List<ExcelData> FiltrarPorPeriodo(
+        List<ExcelData> transacoes,
+        FinalizacaoDateFilter? dateFilter)
+    {
+        if (dateFilter is not { IsActive: true }
+            || string.IsNullOrWhiteSpace(dateFilter.StartDate)
+            || string.IsNullOrWhiteSpace(dateFilter.EndDate))
+        {
+            return transacoes;
+        }
+
+        if (!TryParseFilterDate(dateFilter.StartDate, out var start)
+            || !TryParseFilterDate(dateFilter.EndDate, out var end))
+        {
+            return transacoes;
+        }
+
+        start = start.Date;
+        end = end.Date;
+
+        return transacoes
+            .Where(t =>
+            {
+                if (!TryParseTransactionDate(t.DataDeArrecadacao, out var txDate))
+                    return false;
+                var d = txDate.Date;
+                return d >= start && d <= end;
+            })
+            .ToList();
+    }
+
+    private static bool TryParseFilterDate(string input, out DateTime date)
+    {
+        date = default;
+        var s = input.Trim();
+        if (DateTime.TryParseExact(s, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out date))
+            return true;
+        if (DateTime.TryParseExact(s, "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out date))
+            return true;
+        return DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out date);
+    }
+
+    private static bool TryParseTransactionDate(string input, out DateTime date)
+    {
+        date = default;
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        var s = input.Trim();
+        if (DateTime.TryParseExact(s, "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out date))
+            return true;
+        if (DateTime.TryParseExact(s, "ddMMyyyy", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out date))
+            return true;
+        return DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out date);
     }
 
     private async Task SaveOfxCsvAsync(List<Transacao> transacoesClassificadas, string userId, string sessionId)
